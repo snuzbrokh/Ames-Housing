@@ -18,6 +18,16 @@
     - Takeaways:
         - A decent number of the numerical features are skewed
         - Log transform after removing or resolving NAs
+        
+- [EDA 2]()
+    - Tactics
+    - Analysis
+    - Takeaways
+- [EDA 3]()
+    - Tactics
+    - Analysis
+    - Takeaways
+    
 ## De Cock's Paper
 - Abstract
     - individual residential property from 2006 to 2010 in Ames Iowa
