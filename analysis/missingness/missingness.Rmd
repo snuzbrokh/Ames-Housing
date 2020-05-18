@@ -1,0 +1,176 @@
+---
+title: "Missingness in Ames"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
+```
+
+
+```{r}
+library(Hmisc)
+library(psych)
+library(kknn)
+library(mice)
+library(VIM)
+library(tidyverse)
+library(lattice)
+```
+
+```{r}
+ames = read_csv('./data/train.csv')
+ames = ames[,-1]
+```
+
+## Summary
+1. Summary Metrics for Numeric Features
+```{r}
+# Take out Id column
+ames %>% select_if(is.double) %>% describe()
+```
+
+2. How many observations with at least one missing value?
+```{r}
+sum(!complete.cases(ames))
+mean(!complete.cases(ames)) * 100
+```
+All of them. 
+
+
+3. How many cells have missing values?
+```{r}
+sum(is.na(ames))
+mean(is.na(ames)) * 100
+```
+Almost 6% of the dataset is missing
+
+4. Different combinations of missingness in the dataset
+```{r}
+ames_aggr = ames %>% aggr(., col=mdc(1:2), numbers=TRUE, combine=FALSE, sortVars=TRUE, labels=names(ames), cex.axis=0.8, gap=2, ylab=c("Proportion of missingness\n among numeric features","Missingness Pattern"))
+```
+Seems a lot of missingness has to do with homes with missing pool and other sundry details. 
+Lets filter those out to get a better sense of overall missingness. 
+
+```{r}
+ames_aggr = ames %>% 
+  dplyr::select(.,-c('GarageCond','Fence','Alley','MiscFeature',
+                     'ScreenPorch','FireplaceQu','PoolArea','PoolQC')) %>% 
+  aggr(., col=mdc(1:2), numbers=TRUE, combine=FALSE, sortVars=TRUE, labels=names(ames), cex.axis=0.8, gap=2, ylab=c("Proportion of missingness\n among numeric features","Missingness Pattern"))
+```
+## Imputation
+
+1. Lot Frontage: Linear Feet of street connected to property
+```{r}
+densityPlot(ames$LotFrontage)
+```
+
+2. Random Imputation
+```{r}
+ames.lotF = Hmisc::impute(ames$LotFrontage, "random")
+plot(density(ames.lotF), col = "red",
+     main = "Random Imputation for Age")
+lines(density(ames$LotFrontage, na.rm = TRUE), col = "blue")
+legend("topright", c("Original", "Random Imputed"),
+       col = c("blue", "red"), lwd = 1)
+```
+Though it looks pretty good, we can't be sure we're assigning correct lot frontages to the correct houses (if even applicable). A more defensible procedure would be to use k-means imputation or multiple imputation for doing statistical prediction. 
+
+3. Multiple Imputation
+```{r}
+# Examine the correlation of LotFrontage with other variables
+numeric_feat = ames %>% dplyr::select_if(is.double)
+cor_numeric_pairwise = cor(numeric_feat, use='pairwise.complete.obs')
+cor_numeric_complete = cor(numeric_feat, use='complete.obs')
+
+```
+```{r}
+cor_numeric_pairwise[,'LotFrontage'] %>% sort()
+```
+High correlation with 1st floor square footage (1stFlrSF), Lot area (LotArea), ground living area (GrLivArea)
+Let's throw in sale price for an evalution of how price would affect the reporting of this feature
+Does having a garage (GarageArea) or number car garage (GarageCars) affect reporting levels?
+Does overall quality (OverallQual) of the home affect reporting?
+Lets see some margin plots to evaluate the type of missingness in this feature
+```{r}
+
+marginplot(ames[, c("1stFlrSF","LotFrontage")], col = mdc(1:2), cex.numbers = 1.2, pch = 19)
+# No change
+marginplot(ames[, c("LotArea","LotFrontage")], col = mdc(1:2), cex.numbers = 1.2, pch = 19)
+# No change
+marginplot(ames[, c("GrLivArea","LotFrontage")], col = mdc(1:2), cex.numbers = 1.2, pch = 19)
+# Almost no change
+marginplot(ames[, c("SalePrice","LotFrontage")], col = mdc(1:2), cex.numbers = 1.2, pch = 19)
+# Median sale price of homes without reported lot frontage is higher than those with reported
+marginplot(ames[, c("GarageArea","LotFrontage")], col = mdc(1:2), cex.numbers = 1.2, pch = 19)
+# Size of garages with no LotFrontage reported tend to cluster between 400 and 600 sf
+marginplot(ames[, c("GarageCars","LotFrontage")], col = mdc(1:2), cex.numbers = 1.2, pch = 19)
+# Number car garage has no effect
+marginplot(ames[, c("OverallQual","LotFrontage")], col = mdc(1:2), cex.numbers = 1.2, pch = 19)
+# OverallQual has no effect
+```
+
+
+```{r}
+ames = ames %>% rename('SecFlrSF'='2ndFlrSF','ThreePorch'='3SsnPorch')
+```
+
+Correlation with potential predictors
+```{r}
+features = c('FirstFlrSF','LotArea','GrLivArea','SalePrice','GarageArea')
+cor(ames[,features])
+```
+
+
+Lets evaluate the relationship as MCAR and use the features for which LotFrontage exhibits MAR behaviour as predictors for the missing values
+```{r}
+# Function mice() in mice package is a Markov Chain Monte Carlo (MCMC) method that uses 
+# correlation structure of the data and imputes missing values for each incomplete 
+# variable m times by regression of incomplete variables on the other variables iteratively. 
+imp = mice(ames, m=20, printFlag=FALSE, maxit = 40, seed=2525)
+```
+```{r}
+# The output imp contains m=5 completed datasets. Each dataset can be analysed
+# using function with(), and including an expression for the statistical analysis approach
+# we want to apply for each imputed dataset as follows
+fit.mi = with(data=imp, exp = lm(LotFrontage ~ sqrt(FirstFlrSF) + sqrt(LotArea)))
+combFit = mice::pool(fit.mi) 
+summary(combFit)
+mice::pool.r.squared(fit.mi)
+```
+
+
+
+Check for implausibility in imputations (LF < 0)
+```{r}
+sum(imp$imp$LotFrontage <10)
+```
+
+# Under MAR assumption, the densities should exhibit simlarily (though not be identical)
+```{r}
+densityplot(imp, SalePrice ~ LotFrontage)
+
+```
+
+testing the fit
+```{r}
+fit1 = with(data = imp, expr = lm(LotFrontage ~ SalePrice + FirstFlrSF + LotArea))
+fit2 = with(data = imp, expr = lm(LotFrontage ~ SalePrice + FirstFlrSF + GrLivArea + LotArea))
+# Wald test
+stat = mice::pool.compare(fit2, fit1)
+# P-value of the test
+stat$p
+```
+```{r}
+summary(combFit)
+```
+
+```{r}
+mice::complete(imp, "long")
+```
+
