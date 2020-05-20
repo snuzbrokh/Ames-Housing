@@ -1,0 +1,82 @@
+Feature,dtype,Category,Comment,Segment,Expected Influence
+Id,int64,,,,
+MSSubClass,int64,Nominal,,Building,Medium
+MSZoning,object,Nominal,,Location,High
+LotFrontage,float64,Continous,,Location,Low
+LotArea,int64,Continous,,Building,High
+Street,object,Nominal,,Location,Low
+Alley,object,Nominal,,Location,Low
+LotShape,object,Ordinal,,Building,Low
+LandContour,object,Nominal,,Location,Medium
+Utilities,object,Ordinal,,Building,High
+LotConfig,object,Nominal,Ordinal?,Location,Medium
+LandSlope,object,Ordinal,,Location,Medium
+Neighborhood,object,Nominal,,Location,High
+Condition1,object,Nominal,Ordinal?,Location,High
+Condition2,object,Nominal,Ordinal?,Location,High
+BldgType,object,Nominal,Ordinal?,Building,High
+HouseStyle,object,Nominal,Ordinal?,Building,High
+OverallQual,int64,Ordinal,,Rating,High
+OverallCond,int64,Ordinal,,Rating,High
+YearBuilt,int64,Discrete,,Building,Low
+YearRemodAdd,int64,Discrete,,Building,High
+RoofStyle,object,Nominal,,Building,Low
+RoofMatl,object,Nominal,,Building,Low
+Exterior1st,object,Nominal,,Building,Low
+Exterior2nd,object,Nominal,,Building,Low
+MasVnrType,object,Nominal,,Building,Low
+MasVnrArea,float64,Continous,,Building,Low
+ExterQual,object,Ordinal,,Rating,Low
+ExterCond,object,Ordinal,,Rating,Medium
+Foundation,object,Nominal,Ordinal?Concrete over wood,Building,Low
+BsmtQual,object,Ordinal,,Rating,Low
+BsmtCond,object,Ordinal,,Rating,Medium
+BsmtExposure,object,Ordinal,,Rating,Low
+BsmtFinType1,object,Ordinal,,Rating,Medium
+BsmtFinSF1,int64,Continous,,Building,Medium
+BsmtFinType2,object,Ordinal,,Rating,Medium
+BsmtFinSF2,int64,Continous,,Building,Medium
+BsmtUnfSF,int64,Continous,,Building,Medium
+TotalBsmtSF,int64,Continous,,Building,Medium
+Heating,object,Nominal,,Building,Low
+HeatingQC,object,Ordinal,,Rating,Low
+CentralAir,object,Nominal,Ordinal?,Building,Low
+Electrical,object,Ordinal,,Building,Low
+1stFlrSF,int64,Continous,,Building,High
+2ndFlrSF,int64,Continous,,Building,High
+LowQualFinSF,int64,Continous,,Building,High
+GrLivArea,int64,Continous,,Building,High
+BsmtFullBath,int64,Discrete,,Building,Low
+BsmtHalfBath,int64,Discrete,,Building,Low
+FullBath,int64,Discrete,,Building,High
+HalfBath,int64,Discrete,,Building,Medium
+BedroomAbvGr,int64,Discrete,,Building,High
+KitchenAbvGr,int64,Discrete,,Building,High
+KitchenQual,object,Ordinal,,Rating,High
+TotRmsAbvGrd,int64,Discrete,,Building,High
+Functional,object,Ordinal,,Rating,Low
+Fireplaces,int64,Discrete,,Building,Low
+FireplaceQu,object,Ordinal,,Rating,Low
+GarageType,object,Nominal,Ordinal?,Building,High
+GarageYrBlt,float64,Discrete,,Building,Low
+GarageFinish,object,Ordinal,,Building,Low
+GarageCars,int64,Discrete,,Building,Medium
+GarageArea,int64,Continous,,Building,Medium
+GarageQual,object,Ordinal,Overlap with GarageFinish,Rating,Medium
+GarageCond,object,Ordinal,Overlap with GarageQual,Rating,Medium
+PavedDrive,object,Ordinal,,Building,Medium
+WoodDeckSF,int64,Continous,,Building,Low
+OpenPorchSF,int64,Continous,Lumped into ordinal?,Building,Low
+EnclosedPorch,int64,Continous,Lumped into ordinal?,Building,Low
+3SsnPorch,int64,Continous,Lumped into ordinal?,Building,Low
+ScreenPorch,int64,Continous,Lumped into ordinal?,Building,Low
+PoolArea,int64,Continous,A negative for families with kids,Building,Low
+PoolQC,object,Ordinal,Nominal? A negative for families with kids,Rating,Low
+Fence,object,Ordinal,,Rating,Low
+MiscFeature,object,Nominal,,Building,Low
+MiscVal,int64,Continous,,Building,Low
+MoSold,int64,Discrete,,Building,Low
+YrSold,int64,Discrete,,Building,Low
+SaleType,object,Nominal,Ordinal?,Building,Low
+SaleCondition,object,Nominal,Ordinal?,Building,High
+SalePrice,int64,Continous,,,
