@@ -1,0 +1,66 @@
+---
+title: "R Notebook"
+output: html_notebook
+fig_width: 10
+fig_height: 10
+---
+
+```{r}
+knitr::opts_chunk$set(fig.width=22, fig.height=20) 
+```
+
+```{r}
+ames = read_csv('./data/train.csv')
+```
+
+```{r}
+library(Hmisc)
+library(psych)
+```
+
+```{r}
+describe(ames)
+```
+```{r}
+numericals_summary = ames %>% select_if(is.double) %>% describe()
+```
+
+```{r}
+fig.height = 3
+fig.width = 40
+ames_aggr = ames %>% select_if(is.double) %>% aggr(., col=mdc(1:2), numbers=TRUE, combine=FALSE, sortVars=TRUE, labels=names(ames), cex.axis=0.8, gap=2, ylab=c("Proportion of missingness\n among numeric features","Missingness Pattern"))
+```
+```{r}
+ames_aggr = ames %>% aggr(., col=mdc(1:2), numbers=TRUE, combine=FALSE, sortVars=TRUE, labels=names(ames), cex.axis=0.8, gap=2, ylab=c("Proportion of missingness\n among numeric features","Missingness Pattern"))
+```
+```{r}
+write.csv(ames_aggr[5],'~/desktop/ames-housing/missing.csv')
+```
+
+
+```{r}
+ames_missing = ames_aggr[[5]] %>% filter(Count > 0) %>% arrange(Count)
+```
+```{r}
+subset = ames[,ames_missing['Variable'][[1]]]
+```
+
+
+```{r}
+
+combos = combn(names(subset),2,simplify = FALSE)
+
+for(i in 1:length(combos))
+  {
+  filename = sprintf("marginplot_%s.png", paste(combos[[i]], collapse='-'))
+  png(file=filename)
+    marginplot(ames[, combos[[i]]], col = mdc(1:2), cex.numbers = 1.2, pch = 19)
+    
+  dev.off()
+}
+
+```
+```{r}
+
+```
+
