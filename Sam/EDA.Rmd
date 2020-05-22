@@ -7,60 +7,394 @@ fig_height: 10
 
 ```{r}
 knitr::opts_chunk$set(fig.width=22, fig.height=20) 
-```
-
-```{r}
-ames = read_csv('./data/train.csv')
-```
-
-```{r}
+library(tidyverse)
+library(caret)
 library(Hmisc)
 library(psych)
 ```
 
+## Import
+Importing Cleaned Data
 ```{r}
-describe(ames)
-```
-```{r}
-numericals_summary = ames %>% select_if(is.double) %>% describe()
-```
+ames = read_csv('./data/train_clean.csv')
+#amest = read_csv('./data/test_clean.csv')
+ames = ames[,order(colnames(ames))]
+#test = test[,order(colnames(test))]
 
-```{r}
-fig.height = 3
-fig.width = 40
-ames_aggr = ames %>% select_if(is.double) %>% aggr(., col=mdc(1:2), numbers=TRUE, combine=FALSE, sortVars=TRUE, labels=names(ames), cex.axis=0.8, gap=2, ylab=c("Proportion of missingness\n among numeric features","Missingness Pattern"))
-```
-```{r}
-ames_aggr = ames %>% aggr(., col=mdc(1:2), numbers=TRUE, combine=FALSE, sortVars=TRUE, labels=names(ames), cex.axis=0.8, gap=2, ylab=c("Proportion of missingness\n among numeric features","Missingness Pattern"))
-```
-```{r}
-write.csv(ames_aggr[5],'~/desktop/ames-housing/missing.csv')
-```
+ames = ames %>% dplyr::select(-X1)
+#test = test %>% dplyr::select(-Id,-X1)
+ames = ames[,order(colnames(ames))] %>% 
+  rename('FirstFlrSF' = "1stFlrSF", 'SecFlrSF' = '2ndFlrSF', 'ThreeSeaPorch' = '3SsnPorch')
 
 
-```{r}
-ames_missing = ames_aggr[[5]] %>% filter(Count > 0) %>% arrange(Count)
-```
-```{r}
-subset = ames[,ames_missing['Variable'][[1]]]
+# test = test[,order(colnames(test))] %>% 
+#   rename('FirstFlrSF' = "1stFlrSF", 'SecFlrSF' = '2ndFlrSF', 'ThreeSeaPorch' = '3SsnPorch')
+
+
 ```
 
 
+## Split into train and validation
 ```{r}
+train.idx = sample(1:nrow(ames), 7*nrow(ames)/10)
+ames_train = ames[train.idx,]
+ames_test = ames[-train.idx,]
 
-combos = combn(names(subset),2,simplify = FALSE)
+```
 
-for(i in 1:length(combos))
-  {
-  filename = sprintf("marginplot_%s.png", paste(combos[[i]], collapse='-'))
-  png(file=filename)
-    marginplot(ames[, combos[[i]]], col = mdc(1:2), cex.numbers = 1.2, pch = 19)
-    
+### Numerical Features
+```{r}
+library(ggfortify)
+```
+
+```{r}
+require(gridExtra)
+plot_w_bands = function(df, x_name, y_name) {
+  x = df[,x_name][[1]]
+  y = df[,y_name][[1]]
+  model = lm(y ~ x, data=df)
+  predicted = predict(model)
+  
+  
+  
+  g = ggplot(df, aes(x,y)) +
+    geom_smooth(method = "lm", se = FALSE, color = "lightgrey") +
+    geom_segment(aes(xend = x, yend=predicted), alpha=0.2) +
+    geom_point(aes(color=abs(model$residuals))) +
+    scale_color_continuous(low = "black", high = "red") +
+    guides(color=FALSE) +
+    geom_point(aes(y=predicted),shape=1) +
+    labs(x = x_name, y = y_name) +
+    theme_bw()
+  
+  # Construction of Confidence Intervals
+  
+  clower = predict(model, interval='confidence', level=0.95)[,2]
+  cupper = predict(model, interval='confidence', level=0.95)[,3]
+  
+  
+  plower = predict(model, interval='prediction', level=0.95)[,2]
+  pupper = predict(model, interval='prediction', level=0.95)[,3]
+  
+  g2 = g + geom_ribbon(aes(ymin = clower, ymax = cupper), alpha=0.3, col = 'red') +
+    geom_ribbon(aes(ymin=plower, ymax = pupper), alpha=0.2, col='blue')
+
+  model_name = paste0(y_name,'~',x_name)
+  dir.create(paste0("./Linear Model/",model_name))
+  ggsave(paste0("./Linear Model/",model_name,"/scatter_plot.pdf"), g2)
+  pdf(paste0("./Linear Model/",model_name,"/residual_plots.pdf"))
+  par(mfrow=c(2,2))
+  plot(model,which=c(1,2,4,6))
   dev.off()
+  # plot(x, 
+  #      abs(model$residuals), 
+  #      xlab = x_name, 
+  #      ylab = 'Residual Values Squared', 
+  #      main = 'Squared Residuals compared to MSE')
+  # abline(h=sqrt(mean(model$residuals^2)), lty = 2, lwd=3, col = 'red')
+  # ss = smooth.spline(x, model$residuals^2, cv = TRUE)
+  # lines(ss, lwd=2, col='blue')
+  # abline(h=mean(ss$y), lwd=2, col='black')
+  # legend("topleft", 
+  #      c("MSE", "Spline", "Spline Mean"),
+  #      lty = c(2, 1, 1), 
+  #      col = c("red", "blue", "black"))
+}
+```
+
+
+
+```{r}
+
+
+ames_train %>% 
+  filter(GrLivArea <= 4000) %>% 
+  mutate(SalePrice = log1p(SalePrice), GrLivArea = log1p(GrLivArea)) %>% 
+  plot_w_bands(., "GarageArea", "SalePrice")
+
+```
+
+```{r}
+plot(model, which=c(1,2,4,6))
+```
+
+
+
+```{r}
+
+ggplot(aes(x, abs(model$residuals)), 
+     xlab = x_name, 
+     ylab = 'Residual Values Squared', 
+     main = 'Squared Residuals compared to MSE')
+abline(h=sqrt(mean(model$residuals^2)), lty = 2, lwd=3, col = 'red')
+ss = smooth.spline(x, model$residuals^2, cv = TRUE)
+lines(ss, lwd=2, col='blue')
+abline(h=mean(ss$y), lwd=2, col='black')
+```
+```{r}
+model <- eval(bquote(lm(.(f), data = ames_train)))
+```
+
+
+```{r}
+d <- iris %>% dplyr::select(-Species)
+
+# Fit the model
+fit <- lm(Sepal.Width ~ ., data = iris)
+
+# Obtain predicted and residual values
+d$predicted <- predict(fit)
+d$residuals <- residuals(fit)
+
+# Create plot
+d %>% 
+  gather(key = "iv", value = "x", -Sepal.Width, -predicted, -residuals) %>%
+  ggplot(aes(x = x, y = Sepal.Width)) +
+  geom_segment(aes(xend = x, yend = predicted), alpha = .2) +
+  geom_point(aes(color = residuals)) +
+  scale_color_gradient2(low = "blue", mid = "white", high = "red") +
+  guides(color = FALSE) +
+  geom_point(aes(y = predicted), shape = 1) +
+  facet_grid(~ iv, scales = "free_x") +
+  theme_bw()
+```
+
+```{r}
+library(broom)
+
+# Steps 1 and 2
+d <- lm(mpg ~ hp, data = mtcars) %>% 
+       augment()
+
+head(d)
+
+# Steps 3 and 4
+ggplot(d, aes(x = hp, y = mpg)) +
+  geom_smooth(method = "lm", se = FALSE, color = "lightgrey") +
+  geom_segment(aes(xend = hp, yend = .fitted), alpha = .2) +  # Note `.fitted`
+  geom_point(aes(alpha = abs(.resid))) +  # Note `.resid`
+  guides(alpha = FALSE) +
+  geom_point(aes(y = .fitted), shape = 1) +  # Note `.fitted`
+  theme_bw()
+```
+
+
+
+```{r}
+
+# The new line of code
+
+
+model = lm(log(SalePrice) ~ log(TotalSF), data=ames_train)
+predicted = predict(model)
+
+g = ames_train %>% 
+  mutate(SalePrice = log(SalePrice), TotalSF = log(TotalSF)) %>% 
+  ggplot(aes(x=TotalSF,y=SalePrice)) +
+  #geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "lightgrey") +
+  geom_segment(aes(xend = TotalSF, yend=predicted), alpha=0.2) +
+  geom_point(aes(color=abs(model$residuals))) +
+  scale_color_continuous(low = "black", high = "red") +
+  guides(color=FALSE) +
+  geom_point(aes(y=predicted),shape=1) +
+  theme_bw()
+
+# Construction of Confidence Intervals
+
+clower = predict(model, interval='confidence', level=0.95)[,2]
+cupper = predict(model, interval='confidence', level=0.95)[,3]
+
+
+plower = predict(model, interval='prediction', level=0.95)[,2]
+pupper = predict(model, interval='prediction', level=0.95)[,3]
+
+g + geom_ribbon(aes(ymin = clower, ymax = cupper), alpha=0.3, col = 'red') +
+  geom_ribbon(aes(ymin=plower, ymax = pupper), alpha=0.2, col='blue')
+```
+Definitely a logarithimic relationship...
+
+
+```{r}
+qqnorm(model$residuals)
+qqline(model$residuals)
+```
+
+
+```{r}
+ames_train %>% 
+  ggplot(aes(x = TotalSF, y = SalePrice)) +
+  geom_point()
+
+```
+
+
+## EDA
+
+### Summary of Numerical Variables
+```{r}
+num_summary = num_train %>% describe()
+write_csv(num_summary, './data/numerical_summary.csv')
+num_summary
+```
+
+```{r}
+
+skewed_features = colnames(train)[abs(num_summary$skew) > 3]
+skewed_features
+```
+```{r}
+train[,]
+```
+
+
+
+```{r}
+model.saturated = lm(SalePrice ~ ., data = num_train)
+```
+
+```{r}
+summary(model.saturated)
+```
+
+### Automating Variable Selection Process
+
+According to Akaike Criterion
+```{r}
+library(MASS)
+```
+
+```{r}
+model.empty = lm(SalePrice ~ 1, data = train) #The model with an intercept ONLY.
+model.full = lm(SalePrice ~ ., data = train) #The model with ALL variables.
+scope = list(lower = formula(model.empty), upper = formula(model.full))
+```
+
+```{r}
+forwardAIC = step(model.empty, scope, direction = "forward", k = 2)
+backwardAIC = step(model.full, scope, direction = "backward", k = 2)
+bothAIC.empty = step(model.empty, scope, direction = "both", k = 2)
+bothAIC.full = step(model.full, scope, direction = "both", k = 2)
+```
+
+```{r}
+summary(bothAIC.empty)
+```
+
+```{r}
+plot(bothAIC.full)
+```
+
+
+```{r}
+influencePlot(bothAIC.full)
+```
+### Prediction Function
+```{r}
+make_pred = function(model, data) {
+  data = data[,attr(model$terms, 'term.labels')]
+  pred.band = predict(model, data, interval='prediction')
+}
+```
+
+
+
+```{r}
+sapply(num_train[rownames(inf),attr(bothAIC.full$terms, 'term.labels')],exp) %>% data.frame()
+```
+
+```{r}
+summary(bothAIC.empty)
+```
+
+
+
+### Discrete Numerical Features EDA
+
+```{r}
+features = c('YearBuilt','YearRemodAdd','BsmtFullBath','BsmtHalfBath','Full','SalePrice')
+
+train_dis = train[,features]
+#test_dis = test[,features]
+
+```
+
+```{r}
+clean_data_str = function(date_str) {
+  mdy = mdy(date_str)
+  ymd = ymd(date_str)
+  
+  if(is.na(mdy)){
+    if(is.na(ymd)){
+      return(NA)
+    }
+    else {return(ymd)}
+  }
+  else {return(mdy)}
 }
 
 ```
+
+```{r}
+train_dis %>% ggplot(aes(x = YearBuilt, y = SalePrice)) + geom_point()
+```
+
+Split into test and train
+```{r}
+library(tidyverse)
+
+x = model.matrix(SalePrice ~ ., ames)[, -1]
+y = ames$SalePrice
+
+
+set.seed(0)
+train = sample(1:nrow(x), 7*nrow(x)/10)
+y.test = y[-train]
+
+
+```
+
+
+
+```{r}
+library(caret)
+set.seed(0)
+grid = 10^seq(5, -2, length = 100)
+```
+
 ```{r}
 
+cv.lasso.out = cv.glmnet(x[train,],y[train], lambda=grid, alpha=1, nfolds=10)
+plot(cv.lasso.out)
+
+```
+
+```{r}
+bestlambda.lasso = cv.lasso.out$lambda.min
+bestlambda.lasso
+log(bestlambda.lasso)
+```
+
+```{r}
+lasso.bestlambdatrain = predict(lasso.models.train, s = bestlambda.lasso, newx = x[-train,])
+
+mean((lasso.bestlambdatrain - y.test)^2)
+```
+```{r}
+tmp_coeffs <- coef(cv.glmnet.fit, s = "lambda.min")
+data.frame(name = tmp_coeffs@Dimnames[[1]][tmp_coeffs@i + 1], coefficient = tmp_coeffs@x)
+```
+
+```{r}
+coefs.lasso = coef(cv.lasso.out)
+```
+
+
+```{r}
+str(coefs.lasso)
+```
+
+```{r}
+coefs.lasso@x
 ```
 

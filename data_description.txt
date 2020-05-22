@@ -1,4 +1,6 @@
-MSSubClass: Identifies the type of dwelling involved in the sale.	
+MSSubClass: Identifies the type of dwelling involved in the sale. -> Transform to categorical after import
+
+
 
         20	1-STORY 1946 & NEWER ALL STYLES
         30	1-STORY 1945 & OLDER
@@ -18,7 +20,8 @@ MSSubClass: Identifies the type of dwelling involved in the sale.
        190	2 FAMILY CONVERSION - ALL STYLES AND AGES
 
 MSZoning: Identifies the general zoning classification of the sale.
-		
+
+
        A	Agriculture
        C	Commercial
        FV	Floating Village Residential
@@ -32,32 +35,33 @@ LotFrontage: Linear feet of street connected to property
 
 LotArea: Lot size in square feet
 
-Street: Type of road access to property
+Street: Type of road access to property -> Transform to categorical ordinal after import
+
 
        Grvl	Gravel	
        Pave	Paved
        	
-Alley: Type of alley access to property
+Alley: Type of alley access to property -> Transform to categorical ordinal after import
 
        Grvl	Gravel
        Pave	Paved
        NA 	No alley access
 		
-LotShape: General shape of property
+LotShape: General shape of property -> Transform to categorical ordinal after import
 
        Reg	Regular	
        IR1	Slightly irregular
        IR2	Moderately Irregular
        IR3	Irregular
        
-LandContour: Flatness of the property
+LandContour: Flatness of the property -> Transform to categorical ordinal after import
 
        Lvl	Near Flat/Level	
        Bnk	Banked - Quick and significant rise from street grade to building
        HLS	Hillside - Significant slope from side to side
        Low	Depression
 		
-Utilities: Type of utilities available
+Utilities: Type of utilities available -> Transform to categorical ordinal after import
 		
        AllPub	All public Utilities (E,G,W,& S)	
        NoSewr	Electricity, Gas, and Water (Septic Tank)
@@ -72,7 +76,7 @@ LotConfig: Lot configuration
        FR2	Frontage on 2 sides of property
        FR3	Frontage on 3 sides of property
 	
-LandSlope: Slope of property
+LandSlope: Slope of property -> Transform to categorical ordinal after import
 		
        Gtl	Gentle slope
        Mod	Moderate Slope	
@@ -249,7 +253,7 @@ MasVnrType: Masonry veneer type
 	
 MasVnrArea: Masonry veneer area in square feet
 
-ExterQual: Evaluates the quality of the material on the exterior 
+ExterQual: Evaluates the quality of the material on the exterior  -> Transform to categorical ordinal after import
 		
        Ex	Excellent
        Gd	Good
@@ -257,7 +261,7 @@ ExterQual: Evaluates the quality of the material on the exterior
        Fa	Fair
        Po	Poor
 		
-ExterCond: Evaluates the present condition of the material on the exterior
+ExterCond: Evaluates the present condition of the material on the exterior -> Transform to categorical ordinal after import
 		
        Ex	Excellent
        Gd	Good
@@ -274,7 +278,7 @@ Foundation: Type of foundation
        Stone	Stone
        Wood	Wood
 		
-BsmtQual: Evaluates the height of the basement
+BsmtQual: Evaluates the height of the basement -> Transform to categorical ordinal after import
 
        Ex	Excellent (100+ inches)	
        Gd	Good (90-99 inches)
@@ -283,7 +287,7 @@ BsmtQual: Evaluates the height of the basement
        Po	Poor (<70 inches
        NA	No Basement
 		
-BsmtCond: Evaluates the general condition of the basement
+BsmtCond: Evaluates the general condition of the basement -> Transform to categorical ordinal after import
 
        Ex	Excellent
        Gd	Good
@@ -292,7 +296,7 @@ BsmtCond: Evaluates the general condition of the basement
        Po	Poor - Severe cracking, settling, or wetness
        NA	No Basement
 	
-BsmtExposure: Refers to walkout or garden level walls
+BsmtExposure: Refers to walkout or garden level walls -> Transform to categorical ordinal after import
 
        Gd	Good Exposure
        Av	Average Exposure (split levels or foyers typically score average or above)	
@@ -300,7 +304,7 @@ BsmtExposure: Refers to walkout or garden level walls
        No	No Exposure
        NA	No Basement
 	
-BsmtFinType1: Rating of basement finished area
+BsmtFinType1: Rating of basement finished area -> Transform to categorical ordinal after import
 
        GLQ	Good Living Quarters
        ALQ	Average Living Quarters
@@ -310,9 +314,9 @@ BsmtFinType1: Rating of basement finished area
        Unf	Unfinshed
        NA	No Basement
 		
-BsmtFinSF1: Type 1 finished square feet
+BsmtFinSF1: Type 1 finished square feet 
 
-BsmtFinType2: Rating of basement finished area (if multiple types)
+BsmtFinType2: Rating of basement finished area (if multiple types) -> Transform to categorical ordinal after import
 
        GLQ	Good Living Quarters
        ALQ	Average Living Quarters
@@ -337,7 +341,7 @@ Heating: Type of heating
        OthW	Hot water or steam heat other than gas
        Wall	Wall furnace
 		
-HeatingQC: Heating quality and condition
+HeatingQC: Heating quality and condition -> Transform to categorical ordinal after import
 
        Ex	Excellent
        Gd	Good
@@ -345,7 +349,7 @@ HeatingQC: Heating quality and condition
        Fa	Fair
        Po	Poor
 		
-CentralAir: Central air conditioning
+CentralAir: Central air conditioning -> Transform to binary after import
 
        N	No
        Y	Yes
@@ -378,7 +382,7 @@ Bedroom: Bedrooms above grade (does NOT include basement bedrooms)
 
 Kitchen: Kitchens above grade
 
-KitchenQual: Kitchen quality
+KitchenQual: Kitchen quality -> Transform to categorical ordinal after import
 
        Ex	Excellent
        Gd	Good
@@ -388,7 +392,7 @@ KitchenQual: Kitchen quality
        	
 TotRmsAbvGrd: Total rooms above grade (does not include bathrooms)
 
-Functional: Home functionality (Assume typical unless deductions are warranted)
+Functional: Home functionality (Assume typical unless deductions are warranted) -> Transform to categorical ordinal after import
 
        Typ	Typical Functionality
        Min1	Minor Deductions 1
@@ -401,7 +405,7 @@ Functional: Home functionality (Assume typical unless deductions are warranted)
 		
 Fireplaces: Number of fireplaces
 
-FireplaceQu: Fireplace quality
+FireplaceQu: Fireplace quality -> Transform to categorical ordinal after import
 
        Ex	Excellent - Exceptional Masonry Fireplace
        Gd	Good - Masonry Fireplace in main level
@@ -422,7 +426,7 @@ GarageType: Garage location
 		
 GarageYrBlt: Year garage was built
 		
-GarageFinish: Interior finish of the garage
+GarageFinish: Interior finish of the garage -> Transform to categorical ordinal after import
 
        Fin	Finished
        RFn	Rough Finished	
@@ -433,7 +437,7 @@ GarageCars: Size of garage in car capacity
 
 GarageArea: Size of garage in square feet
 
-GarageQual: Garage quality
+GarageQual: Garage quality -> Transform to categorical ordinal after import
 
        Ex	Excellent
        Gd	Good
@@ -442,7 +446,7 @@ GarageQual: Garage quality
        Po	Poor
        NA	No Garage
 		
-GarageCond: Garage condition
+GarageCond: Garage condition -> Transform to categorical ordinal after import
 
        Ex	Excellent
        Gd	Good
@@ -451,7 +455,7 @@ GarageCond: Garage condition
        Po	Poor
        NA	No Garage
 		
-PavedDrive: Paved driveway
+PavedDrive: Paved driveway -> Transform to categorical ordinal after import
 
        Y	Paved 
        P	Partial Pavement
@@ -469,7 +473,7 @@ ScreenPorch: Screen porch area in square feet
 
 PoolArea: Pool area in square feet
 
-PoolQC: Pool quality
+PoolQC: Pool quality -> Transform to categorical ordinal after import
 		
        Ex	Excellent
        Gd	Good
@@ -477,7 +481,7 @@ PoolQC: Pool quality
        Fa	Fair
        NA	No Pool
 		
-Fence: Fence quality
+Fence: Fence quality -> Transform to categorical ordinal after import
 		
        GdPrv	Good Privacy
        MnPrv	Minimum Privacy

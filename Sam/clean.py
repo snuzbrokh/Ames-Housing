@@ -106,7 +106,7 @@ def clean(train):
 	# we'll set it equal to 0
 	train.GarageYrBlt.fillna(0, inplace=True)
 
-	# Questionable
+	# Reasonable to substitude all missing with the median for that particular neighborhood
 	train.LotFrontage = train.groupby('Neighborhood')['LotFrontage'].transform(lambda x: x.fillna(x.median()))
 	return
 
@@ -129,6 +129,7 @@ def add_features(train):
 	train['WasRemodeled'] = (train.YearRemodAdd != train.YearBuilt).astype(np.int64)
 	train['IsNew'] = (train.YearBuilt > 2000).astype(np.int64)
 	train['WasCompleted'] = (train.SaleCondition != 'Partial').astype(np.int64)
+	train['AfterWW2'] = (train.YearBuilt >= 1946).astype(np.int64)
 
 	return
 
