@@ -11,6 +11,7 @@ library(tidyverse)
 library(caret)
 library(Hmisc)
 library(psych)
+library(rbin)
 ```
 
 ## Import
@@ -36,10 +37,15 @@ ames = ames[,order(colnames(ames))] %>%
 
 ## Split into train and validation
 ```{r}
-train.idx = sample(1:nrow(ames), 7*nrow(ames)/10)
-ames_train = ames[train.idx,]
-ames_test = ames[-train.idx,]
+train.idx = sample(1:nrow(ames), 10*nrow(ames)/10)
+ames_train = ames#[train.idx,]
+#ames_test = ames[-train.idx,]
 
+```
+
+
+```{r}
+mean(ames_train$SalePrice)
 ```
 
 ### Numerical Features
@@ -49,7 +55,7 @@ library(ggfortify)
 
 ```{r}
 require(gridExtra)
-plot_w_bands = function(df, x_name, y_name) {
+plot_numerical_bands = function(df, x_name, y_name) {
   x = df[,x_name][[1]]
   y = df[,y_name][[1]]
   model = lm(y ~ x, data=df)
@@ -81,11 +87,23 @@ plot_w_bands = function(df, x_name, y_name) {
 
   model_name = paste0(y_name,'~',x_name)
   dir.create(paste0("./Linear Model/",model_name))
+  
+  # Save Scatter Plot
   ggsave(paste0("./Linear Model/",model_name,"/scatter_plot.pdf"), g2)
+  
+  # Save Diagnostic PLots
   pdf(paste0("./Linear Model/",model_name,"/residual_plots.pdf"))
   par(mfrow=c(2,2))
   plot(model,which=c(1,2,4,6))
   dev.off()
+  
+  # Save Influence Plot
+  pdf(paste0("./Linear Model/",model_name,"/influence.pdf"))
+  inf = influencePlot(model)
+
+  dev.off()
+  
+  
   # plot(x, 
   #      abs(model$residuals), 
   #      xlab = x_name, 
@@ -109,15 +127,238 @@ plot_w_bands = function(df, x_name, y_name) {
 
 ames_train %>% 
   filter(GrLivArea <= 4000) %>% 
-  mutate(SalePrice = log1p(SalePrice), GrLivArea = log1p(GrLivArea)) %>% 
-  plot_w_bands(., "GarageArea", "SalePrice")
+  #mutate(SalePrice = log1p(SalePrice), GrLivArea = log1p(GrLivArea)) %>% 
+  plot_w_bands(., "TotalSF", "SalePrice")
 
 ```
 
 ```{r}
-plot(model, which=c(1,2,4,6))
+require(gridExtra)
+plot_cat_bands = function(df, x_name, y_name) {
+  x = df[,x_name][[1]]
+  y = df[,y_name][[1]]
+  model = lm(y ~ x, data=df)
+  predicted = predict(model)
+  
+  
+  
+  g = ggplot(df, aes(x,y)) +
+    geom_smooth(method = "lm", se = FALSE, color = "lightgrey") +
+    geom_segment(aes(xend = x, yend=predicted), alpha=0.2) +
+    geom_point(aes(color=abs(model$residuals))) +
+    scale_color_continuous(low = "black", high = "red") +
+    guides(color=FALSE) +
+    geom_point(aes(y=predicted),shape=1) +
+    labs(x = x_name, y = y_name) +
+    theme_bw()
+  
+  # Construction of Confidence Intervals
+  
+  clower = predict(model, interval='confidence', level=0.95)[,2]
+  cupper = predict(model, interval='confidence', level=0.95)[,3]
+  
+  
+  plower = predict(model, interval='prediction', level=0.95)[,2]
+  pupper = predict(model, interval='prediction', level=0.95)[,3]
+  
+  g2 = g + geom_ribbon(aes(ymin = clower, ymax = cupper), alpha=0.3, col = 'red') +
+    geom_ribbon(aes(ymin=plower, ymax = pupper), alpha=0.2, col='blue')
+
+  model_name = paste0(y_name,'~',x_name)
+  dir.create(paste0("./Linear Model/",model_name))
+  
+  # Save Scatter Plot
+  ggsave(paste0("./Linear Model/",model_name,"/scatter_plot.pdf"), g2)
+  
+  # Save Diagnostic PLots
+  pdf(paste0("./Linear Model/",model_name,"/residual_plots.pdf"))
+  par(mfrow=c(2,2))
+  plot(model,which=c(1,2,4,6))
+  dev.off()
+  
+  # Save Influence Plot
+  pdf(paste0("./Linear Model/",model_name,"/influence.pdf"))
+  inf = influencePlot(model)
+
+  dev.off()
+  
+  
+  # plot(x, 
+  #      abs(model$residuals), 
+  #      xlab = x_name, 
+  #      ylab = 'Residual Values Squared', 
+  #      main = 'Squared Residuals compared to MSE')
+  # abline(h=sqrt(mean(model$residuals^2)), lty = 2, lwd=3, col = 'red')
+  # ss = smooth.spline(x, model$residuals^2, cv = TRUE)
+  # lines(ss, lwd=2, col='blue')
+  # abline(h=mean(ss$y), lwd=2, col='black')
+  # legend("topleft", 
+  #      c("MSE", "Spline", "Spline Mean"),
+  #      lty = c(2, 1, 1), 
+  #      col = c("red", "blue", "black"))
+}
 ```
 
+```{r}
+
+sf_bins = rbin_manual(ames_train, SalePrice, TotalSF, c(1e2,1e3,1e4,1e5,1e6))
+
+plot(sf_bins)
+```
+
+```{r}
+ames_train %>% 
+  mutate(BedroomAbvGr = as.factor(BedroomAbvGr)) %>% 
+  group_by(BedroomAbvGr) %>% 
+  ggplot(aes(x = GrLivArea, y = SalePrice)) + geom_point() + 
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  facet_wrap(BedroomAbvGr~.)
+  
+```
+```{r}
+feature = 'Alley'
+ames_train %>% 
+  mutate(feature = as.factor(feature)) %>% 
+  group_by(feature) %>% 
+  ggplot(aes(x = TotalSF, y = SalePrice)) + geom_point() + 
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  #scale_y_continuous(trans='log') +
+  facet_wrap(feature)
+
+feature = 'Alley'
+ames_train %>% 
+  #mutate(feature = as.factor(feature)) %>% 
+  group_by(Alley) %>% 
+  summarise(SalePrice = mean(SalePrice)) %>% 
+  ggplot(aes(x = Alley, y = SalePrice)) + geom_col()
+  #geom_smooth(method = "lm", se = TRUE, color = "red") +
+  #scale_y_continuous(trans='log') +
+  #facet_wrap(feature)
+```
+```{r}
+library(scales)
+```
+
+
+
+```{r}
+plot_pred_by_nom = function(nom_feature, predictor, scale_log = FALSE) {
+  
+  # x = ames_train[,predictor][[1]]
+  # #x2 = ames_train[,nom_feature][[1]]
+  # model = lm(ames_train$SalePrice ~ x)
+  # predicted = predict(model)
+  
+  g = ames_train %>% 
+    mutate(nom_feature = as.factor(nom_feature)) %>% 
+    group_by(nom_feature) %>% 
+    ggplot(aes_string(x = predictor, y = 'SalePrice'), environment=environment()) + 
+    geom_point(shape=1,alpha=0.4) + 
+    geom_smooth(method = "lm", se = TRUE, color = "red", linetype='dashed') +
+    # geom_segment(aes(xend = x, yend=predicted), alpha=0.2) +
+    # geom_point(aes(color=abs(model$residuals))) +
+    # scale_color_continuous(low = "black", high = "red") +
+    # guides(color=FALSE) +
+    # geom_point(aes(y=predicted),shape=1, alpha=0.2) +
+    facet_wrap(nom_feature) +
+    labs(title = paste0(predictor,' v Sale Price for given ',nom_feature)) +
+    theme_bw()
+  
+  
+  model_name = paste0('SalePrice~',predictor)
+  if(scale_log){
+    g = g + 
+      scale_y_continuous(trans='log') + 
+      labs(title=paste0(predictor,' v Log Sale Price for given ',nom_feature))
+    
+    model_name = paste0('Log_SalePrice~',predictor)
+  }
+  
+  file_name = paste0("./Linear Model/Ordinals/",nom_feature,'/',model_name,'.pdf')
+  dir.create(paste0("./Linear Model/Ordinals/",nom_feature))
+  # Save Scatter Plot
+  ggsave(file_name, g)
+  #dev.off()
+  print(g)
+  
+}
+```
+
+```{r}
+plot_pred_by_nom('MSSubClass',"TotalSF", scale_log=F)
+```
+
+```{r}
+feature = 'HasPool'
+ames_train %>% 
+  mutate(feature = as.factor(feature)) %>% 
+  #group_by(feature) %>% 
+  ggplot(aes(x = TotalSF, y = SalePrice)) + geom_point() + 
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  facet_grid(feature) +
+  scale_y_continuous(trans='log')
+```
+
+```{r}
+feature = 'HasGarage'
+ames_train %>% 
+  mutate(feature = as.factor(feature)) %>% 
+  group_by(feature) %>% 
+  ggplot(aes(x = TotalSF, y = SalePrice)) + geom_point() + 
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  facet_wrap(feature) +
+  scale_y_continuous(trans='log')
+```
+
+```{r}
+
+boxplot(log(ames_train$SalePrice) ~ ames_train$MoSold, outline = FALSE)
+boxplot(ames_train$SalePrice ~ ames_train$YrSold, outline = FALSE)
+boxplot(log(ames_train$SalePrice) ~ ames_train$YearBuilt, outline = FALSE)
+```
+
+
+
+```{r}
+feature = 'BsmtExposure'
+ames_train %>% 
+  mutate(feature = as.factor(feature)) %>% 
+  group_by(feature) %>% 
+  ggplot(aes(x = TotalSF, y = SalePrice)) + geom_point() + 
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  scale_y_continuous(trans='log') +
+  facet_wrap(feature)
+```
+Lets look at Total square footage across different defined sub classes
+```{r}
+feature = 'MSSubClass'
+g = ames_train %>% 
+  #filter(feature < 70.0) %>% 
+  mutate(feature = as.factor(feature)) %>% 
+  group_by(feature) %>% 
+  ggplot(aes(x = TotalSF, y = SalePrice)) + geom_point() + 
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  scale_y_continuous(trans='log') +
+  facet_wrap(feature)
+
+
+ggsave("./Linear Model/MsSubClass_logplot.pdf", g)
+```
+
+
+
+```{r}
+feature = 'HouseStyle'
+ames_train %>% 
+  filter(AfterWW2==0) %>% 
+  mutate(feature = as.factor(feature)) %>% 
+  group_by(feature) %>% 
+  ggplot(aes(x = GrLivArea, y = SalePrice)) + geom_point() + 
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  #geom_spline(color = "blue") +
+  #scale_y_continuous(trans='log') +
+  facet_wrap(feature)
+```
 
 
 ```{r}
@@ -224,7 +465,8 @@ qqline(model$residuals)
 ```{r}
 ames_train %>% 
   ggplot(aes(x = TotalSF, y = SalePrice)) +
-  geom_point()
+  #geom_point() +
+  geom_hex(bins=55)
 
 ```
 
