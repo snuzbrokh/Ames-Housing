@@ -9,9 +9,8 @@ fig_height: 10
 knitr::opts_chunk$set(fig.width=22, fig.height=20) 
 library(tidyverse)
 library(caret)
-library(Hmisc)
-library(psych)
-library(rbin)
+library(mgcv)
+library(visreg)
 ```
 
 ## Import
@@ -37,16 +36,240 @@ ames = ames[,order(colnames(ames))] %>%
 
 ## Split into train and validation
 ```{r}
-train.idx = sample(1:nrow(ames), 10*nrow(ames)/10)
-ames_train = ames#[train.idx,]
-#ames_test = ames[-train.idx,]
+train.idx = sample(1:nrow(ames), 8*nrow(ames)/10)
+ames_train = ames[train.idx,]
+ames_test = ames[-train.idx,]
+
+```
+
+```{r}
+ames_train$BsmtQual = as.factor(ames_train$BsmtQual)
+library(caret)
+preProcValues <- preProcess(ames_train, method = c("center"))
+
+ames_train <- predict(preProcValues, ames_train_)
+ames_test <- predict(preProcValues, ames_test_)
+```
+
+```{r}
+head(ames_train)
+```
+
+
+
+```{r}
+ames.gam <- gam(log(SalePrice) 
+                ~ s(GrLivArea) #+ s(TotalBsmtSF) 
+                + s(OverallQual) + s(YearBuilt) 
+                + Fireplaces + s(TotalPorchSF) 
+                + s(MSSubClass) + Neighborhood:OverallQual #+ BsmtQual:TotalBsmtSF + ExterCond:(sqrt(GarageArea)+sqrt(LotArea))
+             #   + s(LotArea) + s(LotFrontage) +s(OpenPorchSF) # + AfterWW2 + Neighborhood, 
+                ,data=ames_train)
+
+ames.lm <- lm(log(SalePrice) 
+                ~ sqrt(GrLivArea) #+ sqrt(TotalBsmtSF) 
+              + OverallQual + YearBuilt 
+              + Fireplaces + TotalPorchSF 
+              + MSSubClass + Neighborhood:OverallQual
+              #+ LotArea + LotFrontage +OpenPorchSF # + AfterWW2 + Neighborhood, 
+                ,data=ames_train)
+
+true = ames_test[,'SalePrice'][[1]]
+gam.predictions = predict.gam(ames.gam, newdata = ames_test, type = 'response')
+gam.errors =gam.predictions-log(true)
+
+
+lm.predictions = predict(ames.lm, newdata = ames_test)
+lm.errors = lm.predictions-log(true)
+
+hist(gam.errors, breaks=20)
+hist(lm.errors, breaks=20)
+
+plot(density(gam.errors), col ='red')
+lines(density(lm.errors), col='black', lty=2)
+#plot(ames.gam)
+legend("topright",legend=c('GAM Residuals','LM Residuals'),
+       col=c("red","black"), lty=1:2, cex=0.8)
+
+print(paste('GAM: Mean Absolute Error:',mean(abs(gam.errors))))
+print(paste('LM: Mean Absolute Error:',mean(abs(lm.errors))))
+
+
+print(ames.gam$formula)
+print(ames.lm$deviance)
+```
+
+## Diagnositcs
+```{r}
+#plot(ames_test[,'SalePrice'][[1]], gam.errors)
+
+plot(true, exp(gam.predictions), ylim=c(0,7e5), xlim=c(0,7e5))
+abline(a=0,b=1)
+
+#points(ames_test_[,'SalePrice'][[1]], exp(lm.predictions))
+plot(true, exp(lm.predictions), ylim=c(0,7e5), xlim=c(0,7e5))
+abline(a=0,b=1)
+
+```
+
+```{r}
+
+plot(ames.gam,scale=0,se=1,shade=TRUE)
+visreg(ames.gam)
+visreg(ames.gam$fitted.values, ames_train$Neighborhood)
+```
+
+```{r}
+library(lattice)
+
+
+
+visreg(ames.gam,'TotalBsmtSF', by='BsmtQual', breaks=6)
+visreg(ames.gam,'GrLivArea', by='OverallQual', breaks=10)
+visreg(ames.gam,'TotalBsmtSF', by='BsmtQual', overlay=TRUE, breaks=3)
+#visreg(ames.gam,'Neighborhood', type='conditional')
+```
+
+
+```{r}
+plot(ames_train_$BsmtQual, ames_train_$SalePrice)
+plot(ames_train_$TotalBsmtSF, ames_train_$SalePrice)
+plot(ames_train_$BsmtQual*ames_train_$TotalBsmtSF, ames_train_$SalePrice)
+```
+
+```{r}
+#plot(ames_train$Neighborhood, ames_train$SalePrice)
+plot(ames_train$OverallCond, ames_train$SalePrice)
+plot(ames_train$OverallCond*ames_train$Neighborhood, ames_train$SalePrice)
+```
+
+```{r}
+summary(ames.gam)
+```
+
+
+```{r}
+
+min_n = 1
+ames_train %>% 
+  group_by(Neighborhood, OverallCond) %>% 
+  tally() %>% 
+  filter(n > min_n) %>% 
+  ggplot(aes(x=Neighborhood, y=OverallCond)) + 
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=OverallCond+0.5, label=n)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) 
+
+ames_train %>% 
+  group_by(MSSubClass, OverallQual) %>% 
+  tally() %>% 
+  filter(n > min_n) %>% 
+  ggplot(aes(x=factor(MSSubClass), y=OverallQual)) + 
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.5, label=n)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) 
+
+
+ames_train %>% 
+  group_by(HouseStyle, OverallQual) %>% 
+  tally() %>% 
+  filter(n > min_n) %>% 
+  ggplot(aes(x=factor(HouseStyle), y=OverallQual)) + 
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.5, label=n)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) 
+
+# Zoning relationship wrt Overall Quality of the Home
+# Floating Village Residential has score >= 6
+# Commercial zones have scores <= 6
+# Low density residential spans all scores
+# medium density tends towards higher scores
+  
+ames_train %>% 
+  group_by(MSZoning, OverallQual) %>% 
+  tally() %>% 
+  filter(n > min_n) %>% 
+  ggplot(aes(x=factor(MSZoning), y=OverallQual)) + 
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.5, label=n)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) 
+
+ames_train %>% 
+  group_by(SaleType, OverallQual) %>% 
+  tally() %>% 
+  filter(n > min_n) %>% 
+  ggplot(aes(x=factor(SaleType), y=OverallQual)) + 
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.5, label=n)) +
+
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) 
+
+ames_train %>% 
+  group_by(SaleType, OverallCond) %>% 
+  tally() %>% 
+  filter(n > min_n) %>% 
+  ggplot(aes(x=factor(SaleType), y=OverallCond)) + 
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=OverallCond+0.5, label=n)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) 
+
+ames_train %>% 
+  group_by(GarageType, GarageCond) %>% 
+  tally() %>% 
+  filter(n > min_n) %>% 
+  ggplot(aes(x=factor(GarageType), y=GarageCond)) + 
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=GarageCond+0.5, label=n)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) 
+
+ames_train %>% 
+  group_by(Neighborhood, OverallQual) %>% 
+  tally() %>% 
+  filter(n > min_n) %>% 
+  ggplot(aes(x=Neighborhood, y=OverallQual)) + 
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.5, label=n)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) 
 
 ```
 
 
 ```{r}
-mean(ames_train$SalePrice)
+model.nointeraction = lm(SalePrice ~ ExterCond + sqrt(GarageArea), data=ames_train_)
+model.interaction = lm(SalePrice ~ ExterCond:sqrt(GarageArea), data=ames_train_)
+
+anova(model.nointeraction, model.interaction)
 ```
+
+
+```{r}
+test_interaction = function(feature1, feature2) {
+  
+  model.nointeraction = lm(SalePrice ~ GrLivArea + feature1 + feature2, data=ames_train)
+  model.interaction = lm(SalePrice ~ GrLivArea + feature1:feature2, data=ames_train)
+  #print(summary(model.interaction))
+  print(anova(model.nointeraction, model.interaction))
+}
+```
+```{r}
+#test_interaction(ames_train$OverallCond, ames_train$Neighborhood)
+#test_interaction(ames_train$OverallQual, ames_train$Neighborhood)
+a = test_interaction(ames_train$Neighborhood, ames_train$OverallCond)
+
+```
+```{r}
+
+test_interaction(ames_train$ExterCond, sqrt(ames_train$GarageArea))
+```
+
 
 ### Numerical Features
 ```{r}
@@ -378,29 +601,6 @@ model <- eval(bquote(lm(.(f), data = ames_train)))
 
 
 ```{r}
-d <- iris %>% dplyr::select(-Species)
-
-# Fit the model
-fit <- lm(Sepal.Width ~ ., data = iris)
-
-# Obtain predicted and residual values
-d$predicted <- predict(fit)
-d$residuals <- residuals(fit)
-
-# Create plot
-d %>% 
-  gather(key = "iv", value = "x", -Sepal.Width, -predicted, -residuals) %>%
-  ggplot(aes(x = x, y = Sepal.Width)) +
-  geom_segment(aes(xend = x, yend = predicted), alpha = .2) +
-  geom_point(aes(color = residuals)) +
-  scale_color_gradient2(low = "blue", mid = "white", high = "red") +
-  guides(color = FALSE) +
-  geom_point(aes(y = predicted), shape = 1) +
-  facet_grid(~ iv, scales = "free_x") +
-  theme_bw()
-```
-
-```{r}
 library(broom)
 
 # Steps 1 and 2
@@ -697,5 +897,126 @@ ames_train %>%
   #scale_y_continuous(trans='log') +
   theme_bw()
 
+```
+
+```{r}
+model.fire = lm(log(SalePrice) ~ sqrt(GrLivArea) + sqrt(TotalBsmtSF) + OverallCond + AfterWW2 + Fireplaces + IsNew + OverallQual, data = ames)
+summary(model.fire)
+plot(model.fire)
+inf = influencePlot(model.fire)
+ames[rownames(inf),]
+```
+
+```{r}
+model = lm(log(SalePrice) ~ TotalBsmtSF + GrLivArea, data = ames)
+ # Create a vector of gradually-changing colors, with one entry for each data # point
+the.colors <- rainbow(n = nrow(df))
+# For each data point, see how it ranks according to X2, from smallest (1)
+# to largest
+the.ranks <- rank(ames$GrLivArea)
+# Plot residuals vs. X1, colored according to X2 Defining the color and rank
+# vectors makes this next line a bit less mysterious, but it's not
+# necessary; this could all be a one-liner.
+plot(ames$TotalBsmtSF, residuals(model), pch = 19, col = the.colors[the.ranks], ylab = "Residuals")
+```
+
+```{r}
+hist(sqrt(ames$TotalBsmtSF))
+hist(ames$TotalBsmtSF)
+hist(log(ames$SalePrice))
+```
+
+
+
+```{r}
+library(tidyverse)
+model.test = lm(SalePrice ~ TotalSF + AfterWW2, data = ames)
+res = data.frame(cbind(ames$AfterWW2, residuals(model.test)))
+colnames(res) = c('AfterWW2','Residuals')
+ggplot(data = res, aes(x = factor(AfterWW2), y = Residuals)) + geom_boxplot()
+ggplot(data = res, aes(x=Residuals)) + geom_density(alpha=.2, fill="#FF6666") + facet_grid(res$AfterWW2, scales = 'free_y')
+```
+
+```{r}
+ames %>% 
+  filter(YearBuilt > 1990) %>% 
+  group_by(YearBuilt,CentralAir) %>% 
+  tally() %>% 
+  ggplot(aes(x = YearBuilt, y=n, fill=CentralAir)) + geom_col()
+```
+```{r}
+ames %>% 
+  filter(YearBuilt > 1990) %>% 
+  group_by(YearBuilt,MSSubClass) %>% 
+  tally() %>% 
+  ggplot(aes(x = YearBuilt, y=n, fill=factor(MSSubClass))) + geom_col()
+```
+
+```{r}
+hist(ames$SalePrice)
+```
+```{r}
+
+```
+
+
+```{r}
+b = c(-Inf, 1.2e5, 2e5,5e5,Inf)
+names = c('Cheap','Average','Expensive','Very Expensive')
+bins = cut(ames$SalePrice, breaks = b, labels = names)
+
+ames %>% 
+  cbind(., bins) %>% 
+  filter(YearBuilt > 1930) %>% 
+  group_by(YearBuilt,bins) %>% 
+  tally() %>% 
+  ggplot(aes(x = YearBuilt, y=n, fill=factor(bins))) + geom_col()
+
+```
+
+```{r}
+ames %>% 
+  group_by(YrSold,YearBuilt) %>% 
+  tally() %>% 
+  ggplot(aes(x = YrSold, y=n, fill=YearBuilt)) + geom_col(position='fill')
+```
+
+```{r}
+model.test = lm(log(SalePrice) ~ sqrt(TotalSF)*MSSubClass,data=ames )
+summary(model.test)
+```
+
+```{r}
+library(AppliedPredictiveModeling)
+transparentTheme(trans = .4)
+library(caret)
+plotSubset <- data.frame(scale(ames[, c("SalePrice", "MSSubClass")])) 
+xyplot(SalePrice ~ MSSubClass,
+       data = ames,
+       groups = ames$AfterWW2, 
+       auto.key = list(columns = 2)) 
+```
+
+```{r}
+transformed <- spatialSign(plotSubset)
+transformed <- as.data.frame(transformed)
+xyplot(SalePrice ~ MSSubClass, 
+       data = transformed, 
+       groups = ames$AfterWW2, 
+       auto.key = list(columns = 2)) 
+```
+
+```{r}
+ames_train %>% 
+  group_by(MSSubClass,AfterWW2) %>% 
+  ggplot(aes(x = factor(MSSubClass), y=SalePrice)) + geom_boxplot() +facet_grid(('AfterWW2'))
+
+ames_train %>% 
+  group_by(MSSubClass,HouseStyle) %>% 
+  ggplot(aes(x = factor(MSSubClass), y=SalePrice)) + geom_boxplot() +facet_wrap(('HouseStyle'))
+```
+
+```{r}
+test_interaction(ames_train$ExterCond, ames_train$GarageArea)
 ```
 
