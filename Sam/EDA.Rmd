@@ -11,24 +11,22 @@ library(tidyverse)
 library(caret)
 library(mgcv)
 library(visreg)
+
 ```
 
 ## Import
 Importing Cleaned Data
 ```{r}
 ames = read_csv('./data/train_clean.csv')
-#amest = read_csv('./data/test_clean.csv')
+test = read_csv('./data/test_clean.csv')
 ames = ames[,order(colnames(ames))]
-#test = test[,order(colnames(test))]
-
 ames = ames %>% dplyr::select(-X1)
-#test = test %>% dplyr::select(-Id,-X1)
 ames = ames[,order(colnames(ames))] %>% 
   rename('FirstFlrSF' = "1stFlrSF", 'SecFlrSF' = '2ndFlrSF', 'ThreeSeaPorch' = '3SsnPorch')
 
 
-# test = test[,order(colnames(test))] %>% 
-#   rename('FirstFlrSF' = "1stFlrSF", 'SecFlrSF' = '2ndFlrSF', 'ThreeSeaPorch' = '3SsnPorch')
+test = test[,order(colnames(test))] %>% 
+  rename('FirstFlrSF' = "1stFlrSF", 'SecFlrSF' = '2ndFlrSF', 'ThreeSeaPorch' = '3SsnPorch')
 
 
 ```
@@ -36,6 +34,7 @@ ames = ames[,order(colnames(ames))] %>%
 
 ## Split into train and validation
 ```{r}
+set.seed(3)
 train.idx = sample(1:nrow(ames), 8*nrow(ames)/10)
 ames_train = ames[train.idx,]
 ames_test = ames[-train.idx,]
@@ -43,44 +42,94 @@ ames_test = ames[-train.idx,]
 ```
 
 ```{r}
-ames_train$BsmtQual = as.factor(ames_train$BsmtQual)
-library(caret)
-preProcValues <- preProcess(ames_train, method = c("center"))
-
-ames_train <- predict(preProcValues, ames_train_)
-ames_test <- predict(preProcValues, ames_test_)
-```
-
-```{r}
-head(ames_train)
+ames_num = ames_train %>% select_if(is.numeric)
 ```
 
 
+```{r}
+x_train = model.matrix(SalePrice ~ GrLivArea #+ sqrt(TotalBsmtSF) 
+              + OverallQual + YearBuilt 
+              + Fireplaces + TotalPorchSF 
+              + MSSubClass + Neighborhood, ames_train)
+y_train = ames_train$SalePrice
+
+
+x_test = model.matrix(SalePrice ~ GrLivArea #+ sqrt(TotalBsmtSF) 
+              + OverallQual + YearBuilt 
+              + Fireplaces + TotalPorchSF 
+              + MSSubClass + Neighborhood, ames_train)
+y_test = ames_test$SalePrice
+```
+
 
 ```{r}
-ames.gam <- gam(log(SalePrice) 
-                ~ s(GrLivArea) #+ s(TotalBsmtSF) 
+x_train = 
+grid = 10^seq(5, -2, length = 100)
+set.seed(0)
+fit = cv.gamsel(x_train, y_train)#, lambda = grid)
+```
+
+```{r}
+## data
+set.seed(42)
+x <- seq(0, 1, length=500)
+y <- sin(2*pi*x)^2 + rnorm(500, sd=0.2)
+df <- data.frame(x = x, y = y)
+
+## Generate GCV traces
+lambda <- 1e-6
+gcv <- numeric(length = 100)
+
+## loop over values of lambda, fixing sp
+for (i in seq_along(gcv)) {
+    m <- gam(y ~ s(x, k = 20), data = df, method = "GCV.Cp", sp = lambda)
+    gcv[i] <- m$gcv.ubre
+    lambda <- lambda * 1.1
+}
+
+## gather results
+res <- data.frame(lambda = 1e-6 * 1.1^{0:99}, gcv = gcv)
+
+## plot
+ggplot(res, aes(x = lambda, y = gcv)) +
+    geom_line() +
+    scale_x_log10() +
+    xlab(expression(lambda)) +
+    ylab("Score")
+```
+
+
+### General GAM Model looking at simple interactions
+```{r}
+ames.gam <- mgcv::gam(log(SalePrice) 
+                ~ s(GrLivArea) # Above Ground Square Footage
                 + s(OverallQual) + s(YearBuilt) 
-                + Fireplaces + s(TotalPorchSF) 
-                + s(MSSubClass) + Neighborhood:OverallQual #+ BsmtQual:TotalBsmtSF + ExterCond:(sqrt(GarageArea)+sqrt(LotArea))
+                + s(GarageArea) # Garage Predictors
+                + s(TotalBsmtSF, by=BsmtQual)
+                + s(MSSubClass, by = AfterWW2) 
+                #+ s(HouseStyle, by= AfterWW2) # doesn't work
+                + Neighborhood:OverallCond #+ BsmtQual:TotalBsmtSF + ExterCond:(sqrt(GarageArea)+sqrt(LotArea))
              #   + s(LotArea) + s(LotFrontage) +s(OpenPorchSF) # + AfterWW2 + Neighborhood, 
-                ,data=ames_train)
+                ,method='ML',data=ames_train)
 
 ames.lm <- lm(log(SalePrice) 
                 ~ sqrt(GrLivArea) #+ sqrt(TotalBsmtSF) 
               + OverallQual + YearBuilt 
               + Fireplaces + TotalPorchSF 
-              + MSSubClass + Neighborhood:OverallQual
+              + MSSubClass + Neighborhood:OverallCond
+              
               #+ LotArea + LotFrontage +OpenPorchSF # + AfterWW2 + Neighborhood, 
                 ,data=ames_train)
 
 true = ames_test[,'SalePrice'][[1]]
 gam.predictions = predict.gam(ames.gam, newdata = ames_test, type = 'response')
-gam.errors =gam.predictions-log(true)
+gam.errors = gam.predictions - log(true)
+gam.diff =exp(gam.predictions) - true
 
 
 lm.predictions = predict(ames.lm, newdata = ames_test)
-lm.errors = lm.predictions-log(true)
+lm.errors = lm.predictions - log(true)
+lm.diff = exp(lm.predictions) - true
 
 hist(gam.errors, breaks=20)
 hist(lm.errors, breaks=20)
@@ -91,12 +140,94 @@ lines(density(lm.errors), col='black', lty=2)
 legend("topright",legend=c('GAM Residuals','LM Residuals'),
        col=c("red","black"), lty=1:2, cex=0.8)
 
-print(paste('GAM: Mean Absolute Error:',mean(abs(gam.errors))))
-print(paste('LM: Mean Absolute Error:',mean(abs(lm.errors))))
+
+print(paste('GAM RMSE:',sqrt(mean(gam.errors^2))))
+print(paste('LM RMSE:',sqrt(mean(lm.errors^2))))
+
+print(paste('GAM: Error in $ as Predicted:',round(mean(abs(gam.diff)),2)))
+print(paste('LM: Error in $ as Predicted:',round(mean(abs(lm.diff)),2)))
 
 
 print(ames.gam$formula)
 print(ames.lm$deviance)
+```
+
+```{r}
+ames.gam <- mgcv::gam(log(SalePrice) 
+                ~ ti(FirstFlrSF, by=KitchenAbvGr) + ti(SecFlrSF) 
+                + ti(FirstFlrSF,SecFlrSF)
+                + s(TotalBsmtSF)
+                
+                + s(OverallQual) + s(YearBuilt) 
+                + s(GarageArea) # Garage Predictors
+                #+ s(TotalBsmtSF, by=BsmtQual)
+                + ti(MSSubClass, SecFlrSF)
+                #+ ti(MSSubClass, GrLivArea) 
+                #+ s(HouseStyle, by= AfterWW2) # doesn't work
+                + Neighborhood:OverallCond #+ BsmtQual:TotalBsmtSF + ExterCond:(sqrt(GarageArea)+sqrt(LotArea))
+             #   + s(LotArea) + s(LotFrontage) +s(OpenPorchSF) # + AfterWW2 + Neighborhood, 
+                ,method='ML',data=ames)
+
+ames.lm <- lm(log(SalePrice) 
+                ~ sqrt(GrLivArea) #+ sqrt(TotalBsmtSF) 
+              + OverallQual + YearBuilt 
+              + Fireplaces + TotalPorchSF 
+              + MSSubClass + Neighborhood:OverallCond
+              
+              #+ LotArea + LotFrontage +OpenPorchSF # + AfterWW2 + Neighborhood, 
+                ,data=ames_train)
+
+true = ames_test[,'SalePrice'][[1]]
+gam.predictions = predict.gam(ames.gam, newdata = ames_test, type = 'response')
+gam.errors = gam.predictions - log(true)
+gam.diff =exp(gam.predictions) - true
+
+
+lm.predictions = predict(ames.lm, newdata = ames_test)
+lm.errors = lm.predictions - log(true)
+lm.diff = exp(lm.predictions) - true
+
+hist(gam.errors, breaks=20)
+hist(lm.errors, breaks=20)
+
+plot(density(gam.errors), col ='red')
+lines(density(lm.errors), col='black', lty=2)
+#plot(ames.gam)
+legend("topright",legend=c('GAM Residuals','LM Residuals'),
+       col=c("red","black"), lty=1:2, cex=0.8)
+
+
+print(paste('GAM RMSE:',sqrt(mean(gam.errors^2))))
+print(paste('LM RMSE:',sqrt(mean(lm.errors^2))))
+
+print(paste('GAM: Error in $ as Predicted:',round(mean(abs(gam.diff)),2)))
+print(paste('LM: Error in $ as Predicted:',round(mean(abs(lm.diff)),2)))
+
+
+print(ames.gam$formula)
+print(ames.lm$deviance)
+```
+
+```{r}
+set.seed(4)
+gam.test_predictions = exp(predict.gam(ames.gam, newdata = test, type = 'response'))
+
+submission = data.frame(gam.test_predictions)
+colnames(submission) = 'SalePrice'
+submission = tibble::rowid_to_column(submission,'Id')
+rownames(submission) = 1461:(nrow(submission)+1460)
+submission = mutate(submission, Id = Id + 1460)
+head(submission)
+#write.csv(gam.test_predictions,'./data/price_predictions.csv')
+```
+
+```{r}
+write.table(submission,file="./data/predictions.csv",col.names = c("Id","SalePrice"),sep = ",",row.names = F)
+```
+
+```{r}
+sum(is.na(submission))
+length(submission)
 ```
 
 ## Diagnositcs
@@ -116,7 +247,6 @@ abline(a=0,b=1)
 
 plot(ames.gam,scale=0,se=1,shade=TRUE)
 visreg(ames.gam)
-visreg(ames.gam$fitted.values, ames_train$Neighborhood)
 ```
 
 ```{r}
@@ -150,14 +280,14 @@ summary(ames.gam)
 
 ```{r}
 
-min_n = 1
+min_n = 5
 ames_train %>% 
   group_by(Neighborhood, OverallCond) %>% 
   tally() %>% 
   filter(n > min_n) %>% 
   ggplot(aes(x=Neighborhood, y=OverallCond)) + 
   geom_point() +
-  geom_text(color='red',size=4,aes(y=OverallCond+0.5, label=n)) +
+  geom_text(color='red',size=4,aes(y=OverallCond+0.2, label=n)) +
   theme_bw() +
   theme(axis.text.x=element_text(angle=45, hjust=1)) 
 
@@ -167,7 +297,7 @@ ames_train %>%
   filter(n > min_n) %>% 
   ggplot(aes(x=factor(MSSubClass), y=OverallQual)) + 
   geom_point() +
-  geom_text(color='red',size=4,aes(y=OverallQual+0.5, label=n)) +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.2, label=n)) +
   theme_bw() +
   theme(axis.text.x=element_text(angle=45, hjust=1)) 
 
@@ -178,7 +308,7 @@ ames_train %>%
   filter(n > min_n) %>% 
   ggplot(aes(x=factor(HouseStyle), y=OverallQual)) + 
   geom_point() +
-  geom_text(color='red',size=4,aes(y=OverallQual+0.5, label=n)) +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.2, label=n)) +
   theme_bw() +
   theme(axis.text.x=element_text(angle=45, hjust=1)) 
 
@@ -194,7 +324,7 @@ ames_train %>%
   filter(n > min_n) %>% 
   ggplot(aes(x=factor(MSZoning), y=OverallQual)) + 
   geom_point() +
-  geom_text(color='red',size=4,aes(y=OverallQual+0.5, label=n)) +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.2, label=n)) +
   theme_bw() +
   theme(axis.text.x=element_text(angle=45, hjust=1)) 
 
@@ -204,7 +334,7 @@ ames_train %>%
   filter(n > min_n) %>% 
   ggplot(aes(x=factor(SaleType), y=OverallQual)) + 
   geom_point() +
-  geom_text(color='red',size=4,aes(y=OverallQual+0.5, label=n)) +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.2, label=n)) +
 
   theme_bw() +
   theme(axis.text.x=element_text(angle=45, hjust=1)) 
@@ -215,7 +345,7 @@ ames_train %>%
   filter(n > min_n) %>% 
   ggplot(aes(x=factor(SaleType), y=OverallCond)) + 
   geom_point() +
-  geom_text(color='red',size=4,aes(y=OverallCond+0.5, label=n)) +
+  geom_text(color='red',size=4,aes(y=OverallCond+0.2, label=n)) +
   theme_bw() +
   theme(axis.text.x=element_text(angle=45, hjust=1)) 
 
@@ -225,7 +355,7 @@ ames_train %>%
   filter(n > min_n) %>% 
   ggplot(aes(x=factor(GarageType), y=GarageCond)) + 
   geom_point() +
-  geom_text(color='red',size=4,aes(y=GarageCond+0.5, label=n)) +
+  geom_text(color='red',size=4,aes(y=GarageCond+0.2, label=n)) +
   theme_bw() +
   theme(axis.text.x=element_text(angle=45, hjust=1)) 
 
@@ -235,7 +365,17 @@ ames_train %>%
   filter(n > min_n) %>% 
   ggplot(aes(x=Neighborhood, y=OverallQual)) + 
   geom_point() +
-  geom_text(color='red',size=4,aes(y=OverallQual+0.5, label=n)) +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.2, label=n)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) 
+
+ames_train %>% 
+  group_by(OverallCond, OverallQual) %>% 
+  tally() %>% 
+  filter(n > min_n) %>% 
+  ggplot(aes(x=OverallCond, y=OverallQual)) + 
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.2, label=n)) +
   theme_bw() +
   theme(axis.text.x=element_text(angle=45, hjust=1)) 
 
@@ -571,9 +711,9 @@ ggsave("./Linear Model/MsSubClass_logplot.pdf", g)
 
 
 ```{r}
-feature = 'HouseStyle'
+feature = 'MSSubClass'
 ames_train %>% 
-  filter(AfterWW2==0) %>% 
+  filter(AfterWW2==1) %>% 
   mutate(feature = as.factor(feature)) %>% 
   group_by(feature) %>% 
   ggplot(aes(x = GrLivArea, y = SalePrice)) + geom_point() + 
