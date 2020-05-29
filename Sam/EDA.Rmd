@@ -51,76 +51,56 @@ ames_test = ames[-train.idx,]
 
 
 ```{r}
-x_train = 
-grid = 10^seq(5, -2, length = 100)
-set.seed(0)
-fit = cv.gamsel(x_train, y_train)#, lambda = grid)
-```
 
-```{r}
-## data
-set.seed(42)
-x <- seq(0, 1, length=500)
-y <- sin(2*pi*x)^2 + rnorm(500, sd=0.2)
-df <- data.frame(x = x, y = y)
-
-## Generate GCV traces
-lambda <- 1e-6
-gcv <- numeric(length = 100)
-
-## loop over values of lambda, fixing sp
-for (i in seq_along(gcv)) {
-    m <- gam(y ~ s(x, k = 20), data = df, method = "GCV.Cp", sp = lambda)
-    gcv[i] <- m$gcv.ubre
-    lambda <- lambda * 1.1
-}
-
-## gather results
-res <- data.frame(lambda = 1e-6 * 1.1^{0:99}, gcv = gcv)
-
-## plot
-ggplot(res, aes(x = lambda, y = gcv)) +
-    geom_line() +
-    scale_x_log10() +
-    xlab(expression(lambda)) +
-    ylab("Score")
-```
-
-
-```{r}
-ames.gam <- mgcv::gam(log(SalePrice) 
+## Exploratory GAM Model
+ames.gam <- mgcv::gam(log(SalePrice)
                 ~ s(GrLivArea, by=PriceRange, bs='cr', id=1) # Above Ground SF
                 + s(TotalBsmtSF,bs='cr') # Bsmt SF
-                + s(OverallQual, bs='cr', by=PriceRange) 
-                + s(YearBuilt, bs='cr') 
+                + s(OverallQual, bs='cr', by=PriceRange)
+                + s(YearBuilt, bs='cr')
                 + Fireplaces:PriceRange
                 + s(GarageArea, by = GarageFinish, bs='cr') # Garage Predictors=
                 + s(MSSubClass, bs='cr')
-                #+ AfterWW2 
+                #+ AfterWW2
                 #+ Neighborhood:ExterCond
-                #+ ti(MSSubClass, GrLivArea) 
+                #+ ti(MSSubClass, GrLivArea)
                 #+ s(HouseStyle, by= AfterWW2) # doesn't work
                 + Neighborhood:OverallCond #+ BsmtQual:TotalBsmtSF + ExterCond:(sqrt(GarageArea)+sqrt(LotArea))
-             #   + s(LotArea) + s(LotFrontage) +s(OpenPorchSF) # + AfterWW2 + Neighborhood, 
-                ,method='ML',data=ames, select = TRUE)
+             #   + s(LotArea) + s(LotFrontage) +s(OpenPorchSF) # + AfterWW2 + Neighborhood,
+                ,method='GCV.Cp', data=ames)
 
-ames.lm <- lm(log(SalePrice) 
-                ~ sqrt(GrLivArea) #+ sqrt(TotalBsmtSF) 
-              + OverallQual 
-              + YearBuilt 
-              + Fireplaces 
-              + TotalPorchSF 
-              + MSSubClass 
-              + PriceRange
-              
-              #+ LotArea + LotFrontage +OpenPorchSF # + AfterWW2 + Neighborhood, 
-                ,data=ames)
+## Base GAM Model
+ames.gam.base <- mgcv::gam(log(SalePrice)
+                ~ s(GrLivArea, by=PriceRange, bs='cr', id=1) # Above Ground SF
+                + s(TotalBsmtSF,bs='cr') # Bsmt SF
+                + s(OverallQual, bs='cr', by=PriceRange)
+                + s(YearBuilt, bs='cr')
+                + Fireplaces:PriceRange
+                + s(MSSubClass, bs='cr')
+                + Neighborhood:OverallCond
+                ,method='ML',data=ames)
+
+# ames.lm <- lm(log(SalePrice) 
+#                 ~ sqrt(GrLivArea) #+ sqrt(TotalBsmtSF) 
+#               + OverallQual 
+#               + YearBuilt 
+#               + Fireplaces 
+#               + TotalPorchSF 
+#               + MSSubClass 
+#               + PriceRange
+#               
+#               #+ LotArea + LotFrontage +OpenPorchSF # + AfterWW2 + Neighborhood, 
+#                 ,data=ames)
 
 true = ames_test[,'SalePrice'][[1]]
+
 gam.predictions = predict.gam(ames.gam, newdata = ames_test, type = 'response')
 gam.errors = gam.predictions - log(true)
 gam.diff =exp(gam.predictions) - true
 
+gam.base.predictions = predict.gam(ames.gam.base, newdata = ames_test, type = 'response')
+gam.base.errors = gam.base.predictions - log(true)
+gam.base.diff =exp(gam.base.predictions) - true
 
 lm.predictions = predict(ames.lm, newdata = ames_test)
 lm.errors = lm.predictions - log(true)
@@ -128,17 +108,17 @@ lm.diff = exp(lm.predictions) - true
 
 
 plot(density(gam.errors), col ='red')
-lines(density(lm.errors), col='black', lty=2)
+lines(density(gam.base.errors), col='black', lty=2)
 #plot(ames.gam)
 legend("topright",legend=c('GAM Residuals','LM Residuals'),
        col=c("red","black"), lty=1:2, cex=0.8)
 
 
 print(paste('GAM RMSE:',sqrt(mean(gam.errors^2))))
-print(paste('LM RMSE:',sqrt(mean(lm.errors^2))))
+print(paste('GAM BASE RMSE:',sqrt(mean(gam.base.errors^2))))
 
 print(paste('GAM: Error in $ as Predicted:',round(mean(abs(gam.diff)),2)))
-print(paste('LM: Error in $ as Predicted:',round(mean(abs(lm.diff)),2)))
+print(paste('GAM BASE: Error in $ as Predicted:',round(mean(abs(gam.base.diff)),2)))
 
 #plot(ames_test[,'SalePrice'][[1]], gam.errors)
 
@@ -146,7 +126,7 @@ plot(true, exp(gam.predictions), ylim=c(0,7e5), xlim=c(0,7e5))
 abline(a=0,b=1)
 
 #points(ames_test_[,'SalePrice'][[1]], exp(lm.predictions))
-plot(true, exp(lm.predictions), ylim=c(0,7e5), xlim=c(0,7e5))
+plot(true, exp(gam.base.predictions), ylim=c(0,7e5), xlim=c(0,7e5))
 abline(a=0,b=1)
 ```
 
@@ -350,27 +330,27 @@ min_n = 20
 #   theme_bw() +
 #   theme(axis.text.x=element_text(angle=45, hjust=1))
 #
-ames %>%
-  group_by(SaleType, OverallCond) %>%
-  tally() %>%
-  filter(n > min_n) %>%
-  ggplot(aes(x=factor(SaleType), y=OverallCond)) +
-  geom_point() +
-  geom_text(color='red',size=4,aes(y=OverallCond+0.2, label=n)) +
-  theme_bw() +
-  theme(axis.text.x=element_text(angle=45, hjust=1))
+# ames %>%
+#   group_by(SaleType, OverallCond) %>%
+#   tally() %>%
+#   filter(n > min_n) %>%
+#   ggplot(aes(x=factor(SaleType), y=OverallCond)) +
+#   geom_point() +
+#   geom_text(color='red',size=4,aes(y=OverallCond+0.2, label=n)) +
+#   theme_bw() +
+#   theme(axis.text.x=element_text(angle=45, hjust=1))
+# 
+# ames %>%
+#   group_by(GarageType, GarageCond) %>%
+#   tally() %>%
+#   filter(n > min_n) %>%
+#   ggplot(aes(x=factor(GarageType), y=GarageCond)) +
+#   geom_point() +
+#   geom_text(color='red',size=4,aes(y=GarageCond+0.2, label=n)) +
+#   theme_bw() +
+#   theme(axis.text.x=element_text(angle=45, hjust=1))
 
-ames %>%
-  group_by(GarageType, GarageCond) %>%
-  tally() %>%
-  filter(n > min_n) %>%
-  ggplot(aes(x=factor(GarageType), y=GarageCond)) +
-  geom_point() +
-  geom_text(color='red',size=4,aes(y=GarageCond+0.2, label=n)) +
-  theme_bw() +
-  theme(axis.text.x=element_text(angle=45, hjust=1))
-
-ames %>%
+nQ_test = test %>%
   group_by(Neighborhood, OverallQual) %>%
   tally() %>%
   filter(n > min_n) %>%
@@ -378,9 +358,13 @@ ames %>%
   geom_point() +
   geom_text(color='red',size=4,aes(y=OverallQual+0.2, label=n)) +
   theme_bw() +
+  labs(x = 'Neighborhood (Test Set)') +
   theme(axis.text.x=element_text(angle=45, hjust=1))
 
-ames %>%
+
+ggsave(paste0("./Linear Model/nQ_test.png"), nQ_test)
+
+nC_test = test %>%
   group_by(Neighborhood, OverallCond) %>%
   tally() %>%
   filter(n > min_n) %>%
@@ -388,7 +372,37 @@ ames %>%
   geom_point() +
   geom_text(color='red',size=4,aes(y=OverallCond+0.2, label=n)) +
   theme_bw() +
+  labs(x = 'Neighborhood (Test Set)') +
   theme(axis.text.x=element_text(angle=45, hjust=1))
+
+ggsave(paste0("./Linear Model/nC_test.png"), nC_test)
+
+nQ = ames %>%
+  group_by(Neighborhood, OverallQual) %>%
+  tally() %>%
+  filter(n > min_n) %>%
+  ggplot(aes(x=reorder(Neighborhood,OverallQual,max), y=OverallQual)) +
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=OverallQual+0.2, label=n)) +
+  theme_bw() +
+  labs(x = 'Neighborhood (Training Set)') +
+  theme(axis.text.x=element_text(angle=45, hjust=1))
+
+
+ggsave(paste0("./Linear Model/nQ.png"), nQ)
+
+nC = ames %>%
+  group_by(Neighborhood, OverallCond) %>%
+  tally() %>%
+  filter(n > min_n) %>%
+  ggplot(aes(x=reorder(Neighborhood,OverallCond,max), y=OverallCond)) +
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=OverallCond+0.2, label=n)) +
+  theme_bw() +
+  labs(x = 'Neighborhood (Training Set)') +
+  theme(axis.text.x=element_text(angle=45, hjust=1))
+
+ggsave(paste0("./Linear Model/nC.png"), nC)
 
 ames %>%
   group_by(OverallCond, OverallQual) %>%
@@ -447,6 +461,30 @@ ames %>%
 
 ```
 ```{r}
+ames %>%
+  group_by(Neighborhood, ExterCond) %>%
+  tally() %>%
+  filter(n > 20) %>%
+  ggplot(aes(x=Neighborhood, y=ExterCond)) +
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=ExterCond+0.2, label=n)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1))
+
+test %>%
+  group_by(Neighborhood, ExterCond) %>%
+  tally() %>%
+  filter(n > 20) %>%
+  ggplot(aes(x=Neighborhood, y=ExterCond)) +
+  geom_point() +
+  geom_text(color='red',size=4,aes(y=ExterCond+0.2, label=n)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1))
+```
+
+
+
+```{r}
 
 stat_box_data <- function(y, upper_limit = max(ames$SalePrice) * 1.15) {
   return( 
@@ -498,6 +536,11 @@ ames %>%
   theme_bw()
   
   
+```
+```{r}
+
+ames %>% 
+  ggp
 ```
 
 
