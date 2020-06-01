@@ -9,6 +9,7 @@ library(tidyverse)
 library(caret)
 library(mgcv)
 
+
 library(visreg)
 
 
@@ -19,8 +20,14 @@ Importing Cleaned Data
 ```{r}
 ames = read_csv('./data/train_cleanest.csv')
 test = read_csv('./data/test_cleanest.csv')
+
+
 ames = ames[,order(colnames(ames))]
+test= test[,order(colnames(test))]
+
 ames = ames %>% dplyr::select(-X1)
+test = test %>% dplyr::select(-X1)
+
 ames = ames[,order(colnames(ames))] %>% 
   rename('FirstFlrSF' = "1stFlrSF", 'SecFlrSF' = '2ndFlrSF', 'ThreeSeaPorch' = '3SsnPorch')
 
@@ -28,30 +35,14 @@ ames = ames[,order(colnames(ames))] %>%
 test = test[,order(colnames(test))] %>% 
   rename('FirstFlrSF' = "1stFlrSF", 'SecFlrSF' = '2ndFlrSF', 'ThreeSeaPorch' = '3SsnPorch')
 
-test[is.na(test)] <- 0
-#ames %>% mutate(PriceRange = ifelse(Neighborhood %in% medians$Neighborhood, factor(medians$PriceRange),0)) %>% select(c(Neighborhood,PriceRange))
-# ames$Age <- as.numeric(ames$YrSold)-ames$YearRemodAdd
-# #ames = ames[-c(524, 1299),]
-# 
-# test$Age <- as.numeric(test$YrSold)-test$YearRemodAdd
+ames$PriceRange <- factor(ames$PriceRange, levels = c("High", "Middle", "Low"))
 
-# means = ames %>% group_by(Neighborhood) %>% summarise(MeanPrice = mean(logPrice))
-# means$PriceRange = means$MeanPrice %>% cut_number(5, labels=c('Cheap','LowerMiddle','Middle','UpperMiddle','Expensive'))
-# 
-# 
-# ames = ames %>% left_join(., means[,c('Neighborhood','PriceRange')], by='Neighborhood')
-# test= test %>% left_join(., means[,c('Neighborhood','PriceRange')], by='Neighborhood')
+test$PriceRange <- factor(test$PriceRange, levels = c("High", "Middle", "Low"))
 
+ames$QualCond = ames$OverallCond * ames$OverallQual
 
-ames$PriceRange = as.factor(ames$PriceRange)
-test$PriceRange = as.factor(test$PriceRange)
+test$QualCond = test$OverallCond * test$OverallQual
 ```
-
-```{r}
-ames %>% 
-  ggplot(aes(x=PriceRange,y=logPrice)) + geom_boxplot()
-```
-
 
 ## Split into train and validation
 ```{r}
@@ -59,58 +50,123 @@ set.seed(3)
 train.idx = sample(1:nrow(ames), 8*nrow(ames)/10)
 ames_train = ames[train.idx,]
 ames_test = ames[-train.idx,]
+```
 
+```{r}
+## Base GAM Model
+ames.gam.base <- mgcv::gam(logPrice
+                ~ s(TotalSF, by=PriceRange)
+                + s(QualCond, by= PriceRange)
+                + s(Age)
+                + Fireplaces:PriceRange
+                + s(MSSubClass)
+                + Neighborhood:PriceRange
+                + s(GarageArea, by=GarageCars),
+                method='GCV.Cp',
+                data=ames)
+
+## Base LM Model
+ames.lm <- lm(logPrice
+              ~ TotalSF:PriceRange
+              + QualCond
+              + Age
+              + Fireplaces:PriceRange
+              + MSSubClass
+              + Neighborhood:PriceRange
+              + GarageArea:GarageCars,
+              data=ames)
+
+true = ames_test[,'SalePrice'][[1]]
+
+# gam.predictions = predict.gam(ames.gam, newdata = ames_test, type = 'response')
+# gam.errors = gam.predictions - log(true)
+# gam.diff =exp(gam.predictions) - true
+
+gam.base.predictions = predict.gam(ames.gam.base, newdata = ames_test, type = 'response') #log preds
+gam.base.errors = gam.base.predictions - log(true) # residuals
+gam.base.diff =exp(gam.base.predictions) - true # $ diff
+
+lm.predictions = predict(ames.lm, newdata = ames_test)
+lm.errors = lm.predictions - log(true)
+lm.diff = exp(lm.predictions) - true
+
+print(paste('GAM RMSE:',sqrt(mean(gam.base.errors^2))))
+print(paste('LM RMSE:',sqrt(mean(lm.errors^2))))
+
+print(paste('GAM: Error in $ as Predicted:',round(mean(abs(gam.base.diff)),2)))
+print(paste('LM: Error in $ as Predicted:',round(mean(abs(lm.diff)),2)))
+
+summary(ames.gam.base)
 ```
 
 
 ```{r}
 
-## Exploratory GAM Model
-# ames.gam <- mgcv::gam(log(SalePrice)
-#                 ~ s(GrLivArea, by=OverallQual, bs='cs', id=1, sp=0.1) # Above Ground SF
-#                 + s(TotalBsmtSF,by=HasGarage,bs='cs') # Bsmt SF
-#                 #+ PriceRange:OverallCond
-#                 + s(YearBuilt, bs='cs')
-#                 + Fireplaces:PriceRange
-#                 + s(MSSubClass, bs='cs')
-#                 + s(GarageArea, by = ExterCond, bs='cs') # Garage Predictors=
-#                 #+ s(MSSubClass, bs='cs')
-#                 #+ Neighborhood:ExterQual
-#                 #+ AfterWW2
-#                 #+ Neighborhood:ExterCond
-#                 #+ ti(MSSubClass, GrLivArea)
-#                 #+ s(HouseStyle, by= AfterWW2) # doesn't work
-#                 + Neighborhood:OverallCond #+ BsmtQual:TotalBsmtSF + ExterCond:(sqrt(GarageArea)+sqrt(LotArea))
-#              #   + s(LotArea) + s(LotFrontage) +s(OpenPorchSF) # + AfterWW2 + Neighborhood,
-#                 ,method='GCV.Cp', data=ames, gamma=1.3)
+ames.test = ames %>% mutate(OrdMaster = log(QualCond*ExterCond*ExterQual))
+ggplot(ames.test,aes(x=OrdMaster, y=logPrice)) + geom_point()
+```
 
+```{r}
+ord.lm = lm(logPrice ~ OrdMaster:PriceRange, data=ames.test)
+plot(ord.lm)
+influencePlot(ord.lm)
+
+
+```
+
+```{r}
+ames.test = ames %>% mutate(OrdMaster = QualCond*ExterCond*ExterQual)
+ord.gam = mgcv::gam(logPrice ~ 
+                      s(OrdMaster)
+                    + s(TotalSF, by=PriceRange)
+                    + Neighborhood,
+                    data=ames.test)
+plot(ord.gam)
+summary(ord.gam)
+```
+
+
+```{r}
+#plot(ames.lm)
+#library(car)
+inf = influencePlot(ames.lm)
+ames[rownames(inf),] %>% select(c(Age,Neighborhood,QualCond,PriceRange,TotalSF))
+rownames(inf)
+```
+```{r}
+
+ames.filt = ames[as.numeric(rownames(inf)),]
+ames %>% anti_join(., ames.filt, by = c("SecFlrSF","Neighborhood","FirstFlrSF"))
+```
+
+```{r}
 ## Base GAM Model
 ames.gam.base <- mgcv::gam(logPrice
-                ~ s(GrLivArea, by=PriceRange)
-                + s(TotalBsmtSF)
-                + s(OverallQual, by=PriceRange)
+                ~ s(TotalSF, by=PriceRange)
+                #+ s(TotalBsmtSF)
+                + s(QualCond, by=PriceRange)
                 + s(Age)
-                + s(YearBuilt)
                 + Fireplaces:PriceRange
                 + s(MSSubClass)
-                + Neighborhood:OverallCond
-                + s(GarageArea, by=GarageCars)
-                + FullBath,
-                #method='GCV.Cp',
+                #+ PriceRange
+                + Neighborhood:PriceRange
+                + s(GarageArea, by=GarageCars),
+                #+ FullBath,
+                method='GCV.Cp',
                 data=ames)
 
 ## Base LM Model
-ames.lm <- mgcv::gam(logPrice
-              ~ GrLivArea:PriceRange
-              + TotalBsmtSF
-              + OverallQual:PriceRange
+ames.lm <- lm(logPrice
+              ~ TotalSF:PriceRange
+              #+ TotalBsmtSF
+              + QualCond:PriceRange
               + Age
-              + YearBuilt
               + Fireplaces:PriceRange
               + MSSubClass
-              + Neighborhood:OverallCond
-              + GarageArea:GarageCars
-              + FullBath,
+              #+ PriceRange
+              + Neighborhood:PriceRange
+              + GarageArea:GarageCars,
+              #+ FullBath,
               #method='GCV.CP',
               data=ames)
 
@@ -128,34 +184,76 @@ lm.predictions = predict(ames.lm, newdata = ames_test)
 lm.errors = lm.predictions - log(true)
 lm.diff = exp(lm.predictions) - true
 
-
-plot(density(gam.base.errors), col ='red')
-lines(density(lm.errors), col='black', lty=2)
-#plot(ames.gam)
-legend("topright",legend=c('GAM Residuals','LM Residuals'),
-       col=c("red","black"), lty=1:2, cex=0.8)
-
-
 print(paste('GAM RMSE:',sqrt(mean(gam.base.errors^2))))
 print(paste('LM RMSE:',sqrt(mean(lm.errors^2))))
 
 print(paste('GAM: Error in $ as Predicted:',round(mean(abs(gam.base.diff)),2)))
 print(paste('LM: Error in $ as Predicted:',round(mean(abs(lm.diff)),2)))
 
-#plot(ames_test[,'SalePrice'][[1]], gam.errors)
-
-plot(true, exp(gam.base.predictions), ylim=c(0,7e5), xlim=c(0,7e5))
-abline(a=0,b=1)
-
-#points(ames_test_[,'SalePrice'][[1]], exp(lm.predictions))
-plot(true, exp(lm.predictions), ylim=c(0,7e5), xlim=c(0,7e5))
-abline(a=0,b=1)
-
 summary(ames.gam.base)
 ```
 
 ```{r}
-summary(ames.lm)
+
+ames$PriceRange <- factor(ames$PriceRange, levels = c("Low", "Middle", "High"))
+
+ames.gam.test = mgcv::gam(logPrice ~
+                            s(OverallQual, by=PriceRange, bs='gp')
+                          + s(TotalSF, by=PriceRange, bs='gp'),
+                          method='ML',
+                          data=ames)
+
+
+test.preds= test %>% mutate(logPrice = predict.gam(ames.gam.test, newdata = test, type = 'response'))
+
+gam_qual_eda = visreg(ames.gam.test, 'OverallQual', partial=TRUE,
+       #scale='response',
+       alpha=0.05, gg=TRUE, 
+       line=list(col="red"),
+       fill=list(fill="pink"),
+       points=list(size=1, pch=1, alpha=0.4, col='black')) + 
+  theme_bw() +
+  labs(y = 'Log Sale Price', x = 'Overall Quality') +
+  geom_smooth(method='lm', color='blue') +
+  scale_color_manual(values=colors)
+
+ggsave(paste0("./presentation/gam_qual_eda.png"), gam_qual_eda)
+
+gam_qual_edaP = visreg(ames.gam.test, 'OverallQual', by='PriceRange', partial=TRUE,
+       #scale='response',
+       alpha=0.05, gg=TRUE, 
+       line=list(col="red"),
+       fill=list(fill="pink"),
+       points=list(size=1, pch=1, alpha=0.4, col='black')) + 
+  ylim(10,15) +
+  theme_bw() +
+  labs(y = 'Log Sale Price', x = 'Overall Quality') +
+  scale_color_manual(values=colors)
+
+ggsave(paste0("./presentation/gam_qual_edaP.png"), gam_qual_edaP)
+
+visreg(ames.gam.test, 'TotalSF', partial=TRUE,
+       #scale='response',
+       alpha=0.05, gg=TRUE, 
+       line=list(col="red"),
+       fill=list(fill="pink"),
+       points=list(size=1, pch=1, alpha=0.4, col='black')) + 
+  theme_bw() +
+  labs(y = 'Log Sale Price', x = 'Total Home SF') +
+  geom_smooth(method='lm', color='blue') +
+  scale_color_manual(values=colors)
+
+
+visreg(ames.gam.test, 'TotalSF', by='PriceRange', partial=TRUE,
+       #scale='response',
+       alpha=0.05, gg=TRUE, 
+       line=list(col="red"),
+       fill=list(fill="pink"),
+       points=list(size=1, pch=1, alpha=0.4, col='black')) + 
+  ylim(10,15) +
+  theme_bw() +
+  labs(y = 'Log Sale Price', x = 'Total Home SF') +
+  scale_color_manual(values=colors)
 ```
 
 
@@ -167,48 +265,46 @@ summary(ames.lm)
 # 
 # visreg(ames.gam, 'TotalBsmtSF',by='HasGarage', overlay=TRUE)
 
-grliv = visreg(ames.gam.base, 'GrLivArea', trans=exp, partial=TRUE,
+grliv = visreg(ames.gam.base, 'TotalSF', partial=TRUE,
        #scale='response',
        alpha=0.05, gg=TRUE, 
        line=list(col="red"),
        fill=list(fill="pink"),
-       points=list(size=1, pch=1, alpha=0.2, col='black')) + 
+       points=list(size=1, pch=1, alpha=0.4, col='black')) + 
   theme_bw() +
-  labs(y = 'Log Sale Price', x = 'Above Ground SF') +
+  labs(y = 'Log Sale Price', x = 'Total Home SF') +
   geom_smooth(method='lm', color='blue') +
   scale_color_manual(values=colors)
 
 ggsave(paste0("./presentation/gam_grliv.png"), grliv)
 
-grliv_price = visreg(ames.gam.base, 'GrLivArea', by='PriceRange',trans=exp, partial=TRUE,
+grliv_price = visreg(ames.gam.base, 'TotalSF', by='PriceRange', partial=TRUE,
        #scale='response',
        alpha=0.05, gg=TRUE, 
        line=list(col="red"),
        fill=list(fill="pink"),
-       points=list(size=1, pch=1, alpha=0.2, col='black')) + 
+       points=list(size=1, pch=1, alpha=0.4, col='black')) + 
   theme_bw() +
-  labs(y = 'Log Sale Price', x = 'Above Ground SF') +
-  geom_smooth(method='lm', color='blue') +
+  labs(y = 'Log Sale Price', x = 'Total Home SF') +
   scale_color_manual(values=colors)
 
 
 ggsave(paste0("./presentation/gam_grliv_price.png"), grliv_price)
 
-bsmt = visreg(ames.gam.base, 'TotalBsmtSF', trans=exp, partial=TRUE,
-       #scale='response',
-       alpha=0.05, gg=TRUE, 
-       line=list(col="red"),
-       fill=list(fill="pink"),
-       points=list(size=1, pch=1, alpha=0.2, col='black')) + 
-  theme_bw() +
-  labs(y = 'Log Sale Price', x = 'Total Basement SF') +
-  geom_smooth(method='lm', color='blue') +
-  scale_color_manual(values=colors)
+# bsmt = visreg(ames.gam.base, 'TotalBsmtSF', partial=TRUE,
+#        #scale='response',
+#        alpha=0.05, gg=TRUE, 
+#        line=list(col="red"),
+#        fill=list(fill="pink"),
+#        points=list(size=1, pch=1, alpha=0.2, col='black')) + 
+#   theme_bw() +
+#   labs(y = 'Log Sale Price', x = 'Total Basement SF') +
+#   geom_smooth(method='lm', color='blue') +
+#   scale_color_manual(values=colors)
 
 ggsave(paste0("./presentation/gam_bsmt.png"), bsmt)
 
-msub = visreg(ames.gam.base, 'MSSubClass', 
-              trans=exp, partial=TRUE,
+msub = visreg(ames.gam.base, 'MSSubClass', partial=TRUE,
               jitter=TRUE,
               alpha=0.05, gg=TRUE, 
               line=list(col="red"),
@@ -221,22 +317,22 @@ msub = visreg(ames.gam.base, 'MSSubClass',
 
 ggsave(paste0("./presentation/gam_msub.png"), msub)
 
-cond = visreg(ames.gam.base, 'OverallCond', trans=exp, partial=TRUE,
-       #scale='response',
-       alpha=0.05, gg=TRUE, 
-              jitter=TRUE,
-       line=list(col="red"),
-       fill=list(fill="pink"),
-       points=list(size=1, pch=1, alpha=0.2, col='black')) + 
-  theme_bw() +
-  labs(y = 'Log Sale Price', x = 'Overall Condition of Home') +
-  geom_smooth(method='lm', color='blue') +
-  scale_color_manual(values=colors)
+# cond = visreg(ames.gam.base, 'OverallCond', partial=TRUE,
+#        #scale='response',
+#        alpha=0.05, gg=TRUE, 
+#               jitter=TRUE,
+#        line=list(col="red"),
+#        fill=list(fill="pink"),
+#        points=list(size=1, pch=1, alpha=0.2, col='black')) + 
+#   theme_bw() +
+#   labs(y = 'Log Sale Price', x = 'Overall Condition of Home') +
+#   geom_smooth(method='lm', color='blue') +
+#   scale_color_manual(values=colors)
+# 
+# 
+# ggsave(paste0("./presentation/gam_cond.png"), cond)
 
-
-ggsave(paste0("./presentation/gam_cond.png"), cond)
-
-garage = visreg(ames.gam.base, 'GarageArea', by='GarageCars',trans=exp, partial=TRUE,
+garage = visreg(ames.gam.base, 'GarageArea', by='GarageCars', partial=TRUE,
        #scale='response',
        alpha=0.05, gg=TRUE, 
        line=list(col="red"),
@@ -249,7 +345,7 @@ garage = visreg(ames.gam.base, 'GarageArea', by='GarageCars',trans=exp, partial=
 
 ggsave(paste0("./presentation/gam_garage.png"), garage)
 
-age = visreg(ames.gam.base, 'Age',trans=exp, partial=TRUE,
+age = visreg(ames.gam.base, 'Age', partial=TRUE,
        #scale='response',
        alpha=0.05, gg=TRUE, 
        line=list(col="red"),
@@ -264,32 +360,108 @@ age = visreg(ames.gam.base, 'Age',trans=exp, partial=TRUE,
   # scale_color_manual(values=colors)
 ggsave(paste0("./presentation/gam_age.png"), age)
 ```
+```{r}
+## Base GAM Model
+
+ames.gam.test <- mgcv::gam(logPrice
+                ~ s(QualCond, by=PriceRange)
+                + s(TotalSF, by=PriceRange),
+                method='GCV.Cp',
+                data=ames)
+
+## Base LM Model
+ames.lm.test <- lm(logPrice
+              ~ QualCond:PriceRange
+              + TotalSF:PriceRange,
+              data=ames)
+
+true = ames_test[,'SalePrice'][[1]]
+
+summary(ames.gam.test)
+#summary(ames.lm.test)
+
+```
+```{r}
+visreg(ames.gam.base, "QualCond", partial=TRUE,
+       #scale='response',
+       
+       breaks = c(1000,2000,3000),
+       alpha=0.05, gg=TRUE) 
+
+visreg(ames.gam.base, "QualCond", by="PriceRange",
+       scale='response',
+       
+       alpha=0.05, gg=TRUE)  + ylim(10,15)
+
+visreg(ames.gam.base, "PriceRange", by='TotalSF', partial=TRUE,
+       scale='response',
+       
+       overlay=TRUE, breaks = c(1000,2000,3000),
+       alpha=0.05, gg=TRUE) 
+
+
+visreg(ames.lm, "PriceRange", by='TotalSF', partial=TRUE,
+       scale='response',
+       breaks = c(1500,2500,3500),
+       alpha=0.01, gg=TRUE) 
+
+
+visreg(ames.lm, "TotalSF", by='PriceRange', partial=TRUE,
+       scale='response',
+       #breaks = c(1500,2500,3500),
+       alpha=0.01, gg=TRUE) 
+
+visreg(ames.gam.base, 'TotalSF',partial=TRUE,
+       #scale='response',
+       alpha=0.05, gg=TRUE, 
+       line=list(col="red"),
+       fill=list(fill="pink"),
+       points=list(size=1, pch=1, alpha=0.4, col='black')) + 
+  theme_bw() +
+  geom_smooth(method = 'lm')
+  labs(y = 'Log Sale Price', x = 'Total Home SF') +
+  scale_color_manual(values=colors)
+
+visreg(ames.gam.base, 'TotalSF', by='PriceRange', partial=TRUE,
+       #scale='response',
+       alpha=0.05, gg=TRUE, 
+       line=list(col="red"),
+       fill=list(fill="pink"),
+       points=list(size=1, pch=1, alpha=0.4, col='black')) + 
+  theme_bw() +
+  labs(y = 'Log Sale Price', x = 'Total Home SF') +
+  ylim(10,15)+
+  scale_color_manual(values=colors)
+```
 
 
 ```{r}
-visreg(ames.lm, "PriceRange", by="GrLivArea", trans=exp, partial=TRUE,
+visreg(ames.lm, "PriceRange", by="TotalSF", partial=TRUE,
        #scale='response',
        overlay=TRUE, breaks = c(1000,2000,3000),
-       alpha=0.05, gg=TRUE) +
-  ylim(0,3.5e5)
+       alpha=0.05, gg=TRUE) 
 
-visreg(ames.gam.base, "PriceRange", by="GrLivArea", trans=exp, partial=TRUE,
+visreg(ames.gam.base, "PriceRange", by="TotalSF",, partial=TRUE,
        #scale='response',
        overlay=TRUE, breaks = c(1000,2000,3000),
-       alpha=0.05, gg=TRUE)+
-  ylim(0,320000)
+       alpha=0.05, gg=TRUE)
 ```
 
 ```{r}
 
 std = sd(gam.base.errors)
-dat <- data.frame(density = c(lm.errors,gam.base.errors),model = rep(c("Linear","GAM")))
-dens_comp = ggplot(dat) + 
-  # stat_function(fun = dnorm, args=list(0,std), aes(col='Gaussian')) +
-  geom_density(aes(x = density, group=model, fill = model),alpha = .5) +
-  theme_bw() +
-  #scale_fill_brewer(palette="Dark2") +
-  labs(x='Residual Magnitude', y='Frequency')
+datgam <- data.frame(density = c(gam.base.errors), model = rep(c("GAM")))
+datlm <- data.frame(density = c(lm.errors), model = rep(c("LM")))
+# dens_comp = ggplot(dat,aes(x = density, fill= model)) + 
+#   # stat_function(fun = dnorm, args=list(0,std), aes(col='Gaussian')) +
+#   geom_density(alpha=0.5) +
+#   theme_bw() +
+#   #scale_fill_brewer(palette="Dark2") +
+#   labs(x='Residual Magnitude', y='Frequency')
+
+datgam %>% 
+  ggplot(aes(x=density)) +
+  geom_density()
 
 
 ggsave(paste0("./presentation/dens_comp.png"), dens_comp)
@@ -303,31 +475,135 @@ abline(a=0,b=1)
 
 ```
 ```{r}
-gam.dollars = data.frame(cbind(exp(gam.base.predictions)-true, true))
-colnames(gam.dollars) = c('Error','Real')
+# gam.dollars = data.frame(cbind(exp(gam.base.predictions)-true, true))
+# colnames(gam.dollars) = c('Error','Real')
+# 
+# ggplot(gam.dollars, aes(x=Real, y=Error)) + 
+#   geom_point() +
+#   theme_bw() +
+#   ylim(-1e5,1e5) + 
+#   xlim(0,7e5) +
+#   labs(x = 'True Price [$]',y = 'Prediction Error [$]')
+# 
+# slope = mean(abs(gam.dollars$Error))/mean(gam.dollars$Real)
+# #slope = mean(abs(gam.dollars$Error)/gam.dollars$Real)
+# ggplot(gam.dollars, aes(x=Real, y=abs(Error))) + 
+#   geom_point() +
+#   geom_abline(intercept = 0, slope = 3*slope, linetype='dashed') +
+#   geom_abline(intercept = 0, slope = 2*slope, linetype='dashed') +
+#   geom_abline(intercept = 0, slope = 1*slope, linetype='dashed') +
+#   geom_abline(intercept = 0, slope = 0*slope, linetype='dashed') +
+#   theme_bw() +
+#   #ylim(-1e5,1e5) + 
+#   xlim(0,7e5) +
+#   labs(x = 'True Price [$]',y = 'GAM Absolute Prediction Error [$]')
+# 
+# #ggsave(paste0("./presentation/res_gam.png"), res_gam)
 
-ggplot(gam.dollars, aes(x=Real, y=Error)) + 
-  geom_point() +
-  theme_bw() +
-  ylim(-1e5,1e5) + 
-  xlim(0,7e5) +
-  labs(x = 'True Price [$]',y = 'Prediction Error [$]')
 
-slope = mean(abs(gam.dollars$Error))/mean(gam.dollars$Real)
-#slope = mean(abs(gam.dollars$Error)/gam.dollars$Real)
-res_gam = ggplot(gam.dollars, aes(x=Real, y=abs(Error))) + 
-  geom_point() +
-  geom_abline(intercept = 0, slope = 3*slope, linetype='dashed') +
-  geom_abline(intercept = 0, slope = 2*slope, linetype='dashed') +
-  geom_abline(intercept = 0, slope = 1*slope, linetype='dashed') +
-  geom_abline(intercept = 0, slope = 0*slope, linetype='dashed') +
+
+gam.test_predictions = predict.gam(ames.gam.base, newdata = ames_test, type = 'response')
+lm.test_predictions = predict(ames.lm, newdata = ames_test, type = 'response')
+
+gam.dollars = data.frame(cbind(gam.test_predictions, log(true), gam.test_predictions-log(true)))
+colnames(gam.dollars) = c('Fitted','Real','Error')
+gam.dollars$stdError = gam.dollars$Error/sd(gam.dollars$Error)
+
+lm.dollars = data.frame(cbind(lm.test_predictions, log(true), lm.test_predictions-log(true)))
+colnames(lm.dollars) = c('Fitted','Real','Error')
+lm.dollars$stdError = lm.dollars$Error/sd(lm.dollars$Error)
+ 
+#slope = mean(abs(gam.dollars$Error))/mean(gam.dollars$Real)
+
+#gam_res = 
+  ggplot(gam.dollars, aes(x=Fitted, y=stdError)) + 
+  geom_point(alpha=0.2) +
+  geom_smooth() +
   theme_bw() +
   #ylim(-1e5,1e5) + 
-  xlim(0,7e5) +
-  labs(x = 'True Price [$]',y = 'GAM Absolute Prediction Error [$]')
+  #xlim(1,log(7e5)) +
+  labs(x = 'GAM Fitted Values',y = 'Residual Error')
 
-ggsave(paste0("./presentation/res_gam.png"), res_gam)
+#ggsave(paste0("./presentation/gam_res.png"), gam_res)
+
+ 
+#slope = mean(abs(gam.dollars$Error))/mean(gam.dollars$Real)
+
+#lm_res = 
+  ggplot(lm.dollars, aes(x=Fitted, y=stdError)) + 
+  geom_point(alpha=0.2) +
+  geom_smooth() +
+  theme_bw() +
+  #ylim(-1e5,1e5) + 
+  #xlim(1,log(7e5)) +
+  labs(x = 'LM Fitted Values',y = 'Residual Error')
+
+#ggsave(paste0("./presentation/lm_res.png"), lm_res)
+plot(ames.lm)
+
 ```
+
+## Testing Model Assumptions
+```{r}
+gam.anal= data.frame(cbind(ames.gam.base$fitted.values, ames.gam.base$residuals))
+colnames(gam.anal) = c('Fitted','Error')
+gam.anal$stdError = ames.gam.base$residuals/sd(ames.gam.base$residuals)
+
+gam.anal %>% 
+  ggplot(aes(x=Fitted, y=stdError)) + 
+  geom_point(alpha=0.2) +
+  geom_smooth() +
+  theme_bw() +
+  #ylim(-1e5,1e5) + 
+  #xlim(1,log(7e5)) +
+  labs(x = 'GAM Fitted Values',y = 'Residual Error')
+
+
+gam.anal %>% 
+  ggplot(aes(x=Fitted, y=stdError^2)) + 
+  geom_point(alpha=0.2) +
+  geom_smooth() +
+  theme_bw() +
+  #ylim(-1e5,1e5) + 
+  #xlim(1,log(7e5)) +
+  labs(x = 'GAM Fitted Values',y = 'Residual Error')
+
+gam.anal %>% 
+  ggplot(aes(x=stdError)) +
+  geom_density()
+  theme_bw()
+  
+gam.anal %>% 
+  ggplot(aes(x = sample(1:nrow(gam.anal)), y = stdError)) +
+  geom_point(alpha=0.5) +
+  geom_hline(yintercept=qt(0.025, df = nrow(gam.anal) - 2), color = "red", linetype="dashed", color = "red") +
+  geom_hline(yintercept=qt(1 - 0.025, df = nrow(gam.anal) - 2), color = "red", linetype="dashed", color = "red") +
+  labs(x = 'Train Set Index', y = 'GAM Standardized Residuals') +
+  theme_bw()
+  
+  
+  
+lm.anal= data.frame(cbind(ames.lm$fitted.values, ames.lm$residuals))
+colnames(lm.anal) = c('Fitted','Error')
+lm.anal$stdError = ames.lm$residuals/sd(ames.lm$residuals)
+
+lm.anal %>% 
+  ggplot(aes(x=Fitted, y=stdError)) + 
+  geom_point(alpha=0.2) +
+  geom_smooth() +
+  theme_bw() +
+  labs(x = 'LM Fitted Values',y = 'Residual Error')
+
+lm.anal %>% 
+  ggplot(aes(x = sample(1:nrow(lm.anal)), y = stdError)) +
+  geom_point(alpha=0.5) +
+  geom_hline(yintercept=qt(0.025, df = nrow(lm.anal) - 2), color = "red", linetype="dashed", color = "red") +
+  geom_hline(yintercept=qt(1 - 0.025, df = nrow(lm.anal) - 2), color = "red", linetype="dashed", color = "red") +
+  labs(x = 'Train Set Index', y = 'LM Standardized Residuals') +
+  theme_bw()
+```
+
+
 ```{r}
 lm.dollars = data.frame(cbind(exp(lm.predictions)-true, true))
 colnames(lm.dollars) = c('Error','Real')
@@ -423,22 +699,16 @@ summary(ames.gam)
 
 ```{r}
 
-# gam.test_predictions = exp(predict.gam(ames.gam, newdata = test, type = 'response'))
-# submission = data.frame(gam.test_predictions)
-# colnames(submission) = 'SalePrice'
-# submission = tibble::rowid_to_column(submission,'Id')
-# rownames(submission) = 1461:(nrow(submission)+1460)
-# gm_submission = mutate(submission, Id = Id + 1460)
 
-gam.test_predictions = exp(predict.gam(ames.gam.base, newdata = test, type = 'response'))
-submission = data.frame(gam.test_predictions)
+gam.test_predictions = predict.gam(ames.gam.base, newdata = test, type = 'response')
+submission = data.frame(exp(gam.test_predictions))
 colnames(submission) = 'SalePrice'
 submission = tibble::rowid_to_column(submission,'Id')
 rownames(submission) = 1461:(nrow(submission)+1460)
 gmb_submission = mutate(submission, Id = Id + 1460)
 
-lm.test_predictions = exp(predict(ames.lm, newdata = test, type = 'response'))
-lm_submission = data.frame(lm.test_predictions)
+lm.test_predictions = predict(ames.lm, newdata = test, type = 'response')
+lm_submission = data.frame(exp(lm.test_predictions))
 colnames(lm_submission) = 'SalePrice'
 lm_submission = tibble::rowid_to_column(lm_submission,'Id')
 rownames(lm_submission) = 1461:(nrow(lm_submission)+1460)
@@ -455,10 +725,191 @@ write.table((lm_submission+gmb_submission)/2,file="./data/avg_predictions.csv",c
 ```
 
 ```{r}
-which(is.na(gm_submission)) - 1460
-which(is.na(lm_submission)) - 1460
-length(submission)
+dim_pred = read_csv('../Dmitri/predictions_1590435442.csv')
 ```
+
+
+```{r}
+test.preds = test %>% mutate(preds = predict.gam(ames.gam.base, newdata = test, type = 'response'), logpreds = log(preds))
+
+test.preds.lm = test %>% mutate(preds = predict(ames.lm, newdata = test, type = 'response'), logpreds = log(preds))
+
+test.preds.dim = test %>% mutate(preds = dim_pred$SalePrice, logpreds = log(preds))
+
+
+```
+
+```{r}
+
+test.preds$PriceRange <- factor(test.preds$PriceRange, levels = c("High", "Middle", "Low"))
+preds_unstruct = 
+  test.preds %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = preds, col=PriceRange)) + 
+  geom_point() +
+  labs(x = 'Test Set Index', y = 'Price Predictions') +
+  theme_bw()
+
+ggsave(paste0("./presentation/preds_gam/unstruct.png"), preds_unstruct)
+
+preds_struct = 
+  test.preds %>% 
+  arrange(preds) %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = preds, col=PriceRange)) + 
+  geom_point() +
+  labs(x = 'Test Set Index', y = 'Price Predictions') +
+  theme_bw()
+
+
+ggsave(paste0("./presentation/preds_gam/struct.png"), preds_struct)
+
+
+preds_struct_log = 
+  test.preds %>% 
+  arrange(logpreds) %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = logpreds, col=PriceRange)) + 
+  geom_point() +
+  labs(x = 'Test Set Index', y = 'Log Price Predictions') +
+  theme_bw()
+
+
+ggsave(paste0("./presentation/preds_gam/struct_log.png"), preds_struct_log)
+
+
+preds_binned = 
+  test.preds %>% 
+  arrange(logpreds) %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = logpreds, col=PriceRange)) + 
+  geom_point() +
+  facet_wrap('PriceRange') +
+  labs(x = 'Test Set Index', y = 'Log Price Predictions') +
+  theme_bw()
+
+
+ggsave(paste0("./presentation/preds_gam/binned.png"), preds_binned)
+
+quants = 
+  ggplot(test.preds, aes(sample = logpreds, colour = PriceRange)) +
+  stat_qq() +
+  stat_qq_line()
+
+
+ggsave(paste0("./presentation/preds_gam/quants.png"), quants)
+```
+
+```{r}
+test.preds.lm$PriceRange <- factor(test.preds.lm$PriceRange, levels = c("High", "Middle", "Low"))
+preds_unstruct = 
+  test.preds.lm %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = preds, col=PriceRange)) + 
+  geom_point() +
+  labs(x = 'Test Set Index', y = 'Price Predictions') +
+  theme_bw()
+
+ggsave(paste0("./presentation/preds_lm/unstruct.png"), preds_unstruct)
+
+preds_struct = 
+  test.preds.lm %>% 
+  arrange(preds) %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = preds, col=PriceRange)) + 
+  geom_point() +
+  labs(x = 'Test Set Index', y = 'Price Predictions') +
+  theme_bw()
+
+
+ggsave(paste0("./presentation/preds_lm/truct.png"), preds_struct)
+
+
+preds_struct_log = 
+  test.preds.lm %>% 
+  arrange(logpreds) %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = logpreds, col=PriceRange)) + 
+  geom_point() +
+  labs(x = 'Test Set Index', y = 'Log Price Predictions') +
+  theme_bw()
+
+
+ggsave(paste0("./presentation/preds_lm/struct_log.png"), preds_struct_log)
+
+
+preds_binned = 
+  test.preds.lm %>% 
+  arrange(logpreds) %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = logpreds, col=PriceRange)) + 
+  geom_point() +
+  facet_wrap('PriceRange') +
+  labs(x = 'Test Set Index', y = 'Log Price Predictions') +
+  theme_bw()
+
+
+ggsave(paste0("./presentation/preds_lm/binned.png"), preds_binned)
+
+quants = 
+  ggplot(test.preds.lm, aes(sample = logpreds, colour = PriceRange)) +
+  stat_qq() +
+  stat_qq_line()
+
+
+ggsave(paste0("./presentation/preds_lm/quants.png"), quants)
+```
+
+```{r}
+test.preds.dim$PriceRange <- factor(test.preds.dim$PriceRange, levels = c("High", "Middle", "Low"))
+preds_unstruct = 
+  test.preds.dim %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = preds, col=PriceRange)) + 
+  geom_point() +
+  labs(x = 'Test Set Index', y = 'Price Predictions') +
+  theme_bw()
+
+ggsave(paste0("./presentation/preds_dim/unstruct.png"), preds_unstruct)
+
+preds_struct = 
+  test.preds.dim %>% 
+  arrange(preds) %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = preds, col=PriceRange)) + 
+  geom_point() +
+  labs(x = 'Test Set Index', y = 'Price Predictions') +
+  theme_bw()
+
+
+ggsave(paste0("./presentation/preds_dim/truct.png"), preds_struct)
+
+
+preds_struct_log = 
+  test.preds.dim %>% 
+  arrange(log(preds)) %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = logpreds, col=PriceRange)) + 
+  geom_point() +
+  labs(x = 'Test Set Index', y = 'Log Price Predictions') +
+  theme_bw()
+
+
+ggsave(paste0("./presentation/preds_dim/struct_log.png"), preds_struct_log)
+
+
+preds_binned = 
+  test.preds.dim %>% 
+  arrange(log(preds)) %>% 
+  ggplot(aes(x=1:nrow(test.preds), y = logpreds, col=PriceRange)) + 
+  geom_point() +
+  facet_wrap('PriceRange') +
+  labs(x = 'Test Set Index', y = 'Log Price Predictions') +
+  theme_bw()
+
+
+ggsave(paste0("./presentation/preds_dim/binned.png"), preds_binned)
+
+quants = 
+  ggplot(test.preds.dim, aes(sample = logpreds, colour = PriceRange)) +
+  stat_qq() +
+  labs(y = 'Log Price') +
+  stat_qq_line()
+
+
+ggsave(paste0("./presentation/preds_dim/quants.png"), quants)
+```
+
+
 ```{r}
 
 stat_box_data <- function(y, upper_limit = max(ames$SalePrice) * 1.15) {
@@ -488,53 +939,6 @@ g = ames %>%
 ggsave(paste0("./Linear Model/hood_price.png"), g)
 
 ```
-
-```{r}
-ames$PriceRange =ames$SalePrice %>% cut_number(3, labels=c('Cheap','Average','Expensive'))
-```
-
-```{r}
-ames %>% 
-  ggplot(aes(x=YearBuilt, y = SalePrice)) + 
-  geom_point() +
-  facet_wrap(.~PriceRange)
-```
-
-
-```{r}
-ames %>% 
-  ggplot(aes(x = reorder(Neighborhood,SalePrice, mean), y = SalePrice)) + 
-  geom_boxplot() +
-  theme_bw() +
-  theme(axis.text.x=element_text(angle=45, hjust=1)) +
-  
-  labs(x='Neighborhood', y = 'SalePrice')
-```
-
-## Diagnositcs
-```{r}
-#plot(ames_test[,'SalePrice'][[1]], gam.errors)
-
-plot(true, exp(gam.predictions), ylim=c(0,7e5), xlim=c(0,7e5))
-abline(a=0,b=1)
-
-#points(ames_test_[,'SalePrice'][[1]], exp(lm.predictions))
-plot(true, exp(lm.predictions), ylim=c(0,7e5), xlim=c(0,7e5))
-abline(a=0,b=1)
-
-```
-
-```{r}
-library(lattice)
-
-
-
-visreg(ames.gam,'TotalBsmtSF', by='BsmtQual', breaks=6)
-visreg(ames.gam,'GrLivArea', by='OverallQual', breaks=10)
-visreg(ames.gam,'TotalBsmtSF', by='BsmtQual', overlay=TRUE, breaks=3)
-#visreg(ames.gam,'Neighborhood', type='conditional')
-```
-
 
 
 ```{r}
@@ -1611,9 +2015,42 @@ ames = ames %>% left_join(., binned.df[[2]][,c('MS.Zoning','Categories')], by=c(
 
 ```{r}
 
+test[!complete.cases(test),]
+sum(is.na(test))
+```
+
+
+```{r}
+#test.binn = test %>% select(c('Neighborhood',''))
+test.binn = kknn(PriceRange ~ 
+                   Neighborhood + 
+                   TotalBathrooms + 
+                   KitchenAbvGr +
+                   OverallQual +
+                   ExterQual +
+                   MSZoning, complete, missing, k=1)
+
+
+ames_noSale = ames %>% select(-SalePrice)
+all = rbind(ames_noSale, test)
 ```
 
 ```{r}
-ames
+imputed_Data <- mice(test, m=5, maxit = 20, method = 'pmm', seed = 500);
+completeData = complete(imputed_Data,1)
+test.comp = tibble(completeData)
+```
+
+```{r}
+
+```
+
+```{r}
+test.comp['preds'] = gam.base.predictions
+```
+
+```{r}
+test.comp %>% 
+  ggplot(aes(x = 1:nrow(test.comp), y = preds, col = PriceRange)) + geom_point()
 ```
 
