@@ -23,5 +23,4 @@ Below is a brief description of each directory in this repo:
 Below is a brief description of each code file in this repo:
  - [Feature Engineering and Graphics.ipynb](https://github.com/snuzbrokh/Ames-Housing/blob/master/notebooks/Feature%20Engineering%20and%20Graphics.ipynb): Feature engineering and graphics generation. 
  - [modeling_pipeline.ipynb](https://github.com/snuzbrokh/Ames-Housing/blob/master/notebooks/modeling_pipeline.ipynb): Data preprocessing and final model pipeline for XGBoost and Linear Regression models. 
- - [score_with_rrcf.py](https://github.com/snuzbrokh/Ames-Housing/blob/master/notebooks/GAM.Rmd): Uses a robust random cut forest to assign anomaly scores to each data point in a given time series dataset.
- - [GAM.Rmd](https://github.com/sapols/Satellite-Telemetry-Anomaly-Detection/blob/master/detect_anomalies.py): R notebook with generalized additive model exploration and graphic generation.
+ - [GAM.Rmd](https://github.com/snuzbrokh/Ames-Housing/blob/master/notebooks/GAM.Rmd): R notebook with generalized additive model exploration and graphic generation.
