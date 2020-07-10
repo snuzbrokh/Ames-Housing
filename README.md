@@ -3,6 +3,8 @@
 This is the repository for our project to investigate and predict housing prices in Ames, Iowa.
 This was our third project in the NYC Data Science Academy. 
 
+Dataset can be found [here](https://www.kaggle.com/c/house-prices-advanced-regression-techniques).
+
 [Link to the blog post](https://nycdatascience.com/blog/student-works/fitting-towards-ames-2/)
 
 
